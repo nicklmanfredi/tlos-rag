@@ -35,6 +35,22 @@ AWS_REGION=us-east-1
 ANTHROPIC_MODEL=claude-opus-4-7
 ```
 
+To route chat through the local Codex CLI instead of Anthropic:
+
+```bash
+CHAT_PROVIDER=codex
+# Optional:
+# CODEX_MODEL=gpt-5.4
+```
+
+This uses your local Codex login/config. It is only a local model if you have Codex configured for OSS mode, for example:
+
+```bash
+CHAT_PROVIDER=codex
+CODEX_OSS=true
+CODEX_LOCAL_PROVIDER=ollama
+```
+
 For offline smoke testing only:
 
 ```bash
@@ -95,6 +111,12 @@ Single-message mode:
 
 ```bash
 python -m rag.cli chat --both --message "How do they talk about angels and worship?"
+```
+
+Codex-backed chat:
+
+```bash
+python -m rag.cli chat --both --message "What do they say about the divine council?"
 ```
 
 ## Smoke Test With Sample Transcript

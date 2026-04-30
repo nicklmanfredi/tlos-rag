@@ -83,6 +83,10 @@ class Settings:
     chat_provider: str
     anthropic_model: str
     aws_region: str | None
+    codex_bin: str
+    codex_model: str | None
+    codex_oss: bool
+    codex_local_provider: str | None
 
 
 def settings() -> Settings:
@@ -102,5 +106,8 @@ def settings() -> Settings:
         chat_provider=os.getenv("CHAT_PROVIDER", "anthropic").lower(),
         anthropic_model=os.getenv("ANTHROPIC_MODEL", "claude-opus-4-7"),
         aws_region=os.getenv("AWS_REGION") or os.getenv("AWS_DEFAULT_REGION"),
+        codex_bin=os.getenv("CODEX_BIN", "codex"),
+        codex_model=os.getenv("CODEX_MODEL") or None,
+        codex_oss=os.getenv("CODEX_OSS", "").lower() in {"1", "true", "yes"},
+        codex_local_provider=os.getenv("CODEX_LOCAL_PROVIDER") or None,
     )
-

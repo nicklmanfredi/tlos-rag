@@ -1,10 +1,11 @@
 from __future__ import annotations
 
 import os
+import subprocess
 from pathlib import Path
 
 from .chunking import format_time
-from .config import HOSTS, Settings, host_display, host_slug
+from .config import HOSTS, Settings, host_display, host_slug, project_root
 from .retrieval import retrieve
 
 
@@ -71,6 +72,9 @@ def answer_once(message: str, settings: Settings, mode: str = "both", host: str 
             print(response)
         return response
 
+    if settings.chat_provider == "codex":
+        return answer_with_codex(static_prompt, user_text, settings, stream=stream)
+
     client = anthropic_client(settings)
     system = [{"type": "text", "text": static_prompt, "cache_control": {"type": "ephemeral"}}]
     messages = [{"role": "user", "content": user_text}]
@@ -107,3 +111,38 @@ def anthropic_client(settings: Settings):
 
     return Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
 
+
+def answer_with_codex(static_prompt: str, user_text: str, settings: Settings, stream: bool) -> str:
+    prompt = (
+        static_prompt
+        + "\n\nYou are being called non-interactively by a RAG CLI. "
+        "Answer only the user's podcast question. Do not inspect files or run commands. "
+        "Use only the transcript excerpts provided below for factual claims.\n\n"
+        + user_text
+    )
+    cmd = [
+        settings.codex_bin,
+        "exec",
+        "--ephemeral",
+        "--skip-git-repo-check",
+        "--sandbox",
+        "read-only",
+        "--cd",
+        str(project_root()),
+        "-",
+    ]
+    if settings.codex_model:
+        cmd[2:2] = ["--model", settings.codex_model]
+    if settings.codex_oss:
+        cmd.insert(2, "--oss")
+    if settings.codex_local_provider:
+        cmd[2:2] = ["--local-provider", settings.codex_local_provider]
+
+    proc = subprocess.run(cmd, input=prompt, text=True, capture_output=True, check=False)
+    output = proc.stdout.strip()
+    if proc.returncode != 0:
+        error = proc.stderr.strip() or output
+        raise RuntimeError(f"codex exec failed with exit code {proc.returncode}: {error}")
+    if stream:
+        print(output)
+    return output
