@@ -54,7 +54,7 @@ def main() -> None:
         if args.message:
             answer_once(args.message, cfg, mode=mode, host=args.host, stream=True)
             return
-        print("Press Esc or enter a blank line to exit.")
+        print("Press Esc to exit.")
         while True:
             message = read_repl_line("\nYou: ")
             if message is None:
@@ -62,7 +62,7 @@ def main() -> None:
                 break
             message = message.strip()
             if not message:
-                break
+                continue
             print()
             answer_once(message, cfg, mode=mode, host=args.host, stream=True)
 
