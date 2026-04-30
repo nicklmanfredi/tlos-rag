@@ -6,12 +6,12 @@ from collections import defaultdict
 from rank_bm25 import BM25Okapi
 
 from .config import Settings, host_slug
-from .embeddings import embed_texts, rerank
+from .embeddings import STOPWORDS, embed_texts, rerank
 from .store import load_catalog, open_table
 
 
 def tokenize(text: str) -> list[str]:
-    return re.findall(r"[a-z0-9']+", text.lower())
+    return [term for term in re.findall(r"[a-z0-9']+", text.lower()) if term not in STOPWORDS and len(term) > 2]
 
 
 def retrieve(query: str, settings: Settings, host: str | None = None, final_k: int = 8) -> list[dict]:
@@ -24,7 +24,7 @@ def retrieve(query: str, settings: Settings, host: str | None = None, final_k: i
     if not searchable:
         return []
 
-    semantic = semantic_search(query, settings, host_filter, limit=20)
+    semantic = [] if settings.embedding_provider == "local" else semantic_search(query, settings, host_filter, limit=20)
     keyword = bm25_search(query, searchable, limit=20)
     fused = reciprocal_rank_fusion([semantic, keyword])
     candidates = [row for row in fused[:24]]
@@ -45,7 +45,7 @@ def semantic_search(query: str, settings: Settings, host_filter: str | None, lim
 
 
 def bm25_search(query: str, rows: list[dict], limit: int) -> list[dict]:
-    tokenized = [tokenize(row["text"]) for row in rows]
+    tokenized = [tokenize(f'{row.get("episode_title", "")} {row["text"]}') for row in rows]
     bm25 = BM25Okapi(tokenized)
     scores = bm25.get_scores(tokenize(query))
     ranked = sorted(zip(scores, rows), key=lambda item: item[0], reverse=True)
