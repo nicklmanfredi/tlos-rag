@@ -7,7 +7,7 @@ The transcript files and vector index are local artifacts and are not committed 
 ## Install
 
 ```bash
-cd ~/tlos/podcast-persona-rag
+cd ~/tlos/tlos-rag
 python3.13 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
@@ -126,7 +126,7 @@ python -m rag.cli chat --both --message "What do they say about the divine counc
 This test does not require API keys:
 
 ```bash
-cd ~/tlos/podcast-persona-rag
+cd ~/tlos/tlos-rag
 python3.13 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
