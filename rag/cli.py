@@ -1,6 +1,9 @@
 from __future__ import annotations
 
 import argparse
+import sys
+import termios
+import tty
 from pathlib import Path
 
 from .chat import answer_once
@@ -51,15 +54,59 @@ def main() -> None:
         if args.message:
             answer_once(args.message, cfg, mode=mode, host=args.host, stream=True)
             return
-        print("Enter a blank line to exit.")
+        print("Press Esc or enter a blank line to exit.")
         while True:
-            message = input("\nYou: ").strip()
+            message = read_repl_line("\nYou: ")
+            if message is None:
+                print()
+                break
+            message = message.strip()
             if not message:
                 break
             print()
             answer_once(message, cfg, mode=mode, host=args.host, stream=True)
 
 
+def read_repl_line(prompt: str) -> str | None:
+    """Read one terminal line, returning None if Escape is pressed."""
+    if not sys.stdin.isatty():
+        try:
+            return input(prompt)
+        except EOFError:
+            return None
+
+    sys.stdout.write(prompt)
+    sys.stdout.flush()
+    fd = sys.stdin.fileno()
+    old_settings = termios.tcgetattr(fd)
+    chars: list[str] = []
+    try:
+        tty.setraw(fd)
+        while True:
+            ch = sys.stdin.read(1)
+            if ch == "\x1b":
+                return None
+            if ch in {"\r", "\n"}:
+                sys.stdout.write("\n")
+                sys.stdout.flush()
+                return "".join(chars)
+            if ch == "\x03":
+                raise KeyboardInterrupt
+            if ch == "\x04":
+                return None
+            if ch in {"\x7f", "\b"}:
+                if chars:
+                    chars.pop()
+                    sys.stdout.write("\b \b")
+                    sys.stdout.flush()
+                continue
+            if ch.isprintable():
+                chars.append(ch)
+                sys.stdout.write(ch)
+                sys.stdout.flush()
+    finally:
+        termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
+
+
 if __name__ == "__main__":
     main()
-

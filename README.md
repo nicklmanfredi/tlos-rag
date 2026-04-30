@@ -107,6 +107,8 @@ python -m rag.cli chat --both
 python -m rag.cli chat --show
 ```
 
+In interactive chat, press `Esc` or submit a blank line to exit.
+
 Single-message mode:
 
 ```bash
