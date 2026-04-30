@@ -1,6 +1,8 @@
 # The Lord of Spirits RAG
 
-CLI-only RAG system for chatting with Claude in one of two podcast-host personas, both hosts together, or a merged show voice. It ingests plain-text transcripts with speaker labels, chunks them by rolling speech windows, stores local vectors in LanceDB, merges semantic search with BM25 keyword search, reranks with Voyage, and sends cited transcript excerpts to Claude.
+Private CLI RAG system for searching and chatting with a local index of *The Lord of Spirits* podcast transcripts. It supports transcript-grounded persona chat inspired by the two hosts, Fr. Andrew Stephen Damick and Fr. Stephen De Young, either individually, together, or as a merged "show" voice.
+
+The system ingests the scraped Ancient Faith transcript `.txt` files, parses speaker labels, chunks the conversations into rolling windows, stores local vectors in LanceDB, merges semantic search with BM25 keyword search, and sends cited Lord of Spirits transcript context to the configured LLM provider. On this machine it is currently set up to use the local `codex` CLI for chat, with local keyword retrieval/reranking for no-key operation.
 
 The transcript files and vector index are local artifacts and are not committed to git.
 
@@ -16,7 +18,15 @@ cp .env.example .env
 
 Use Python 3.13 or 3.12. The Voyage SDK release pinned here does not install on Python 3.14.
 
-Edit `.env`. Production defaults are Voyage embeddings/reranking and Claude via the Anthropic SDK:
+Edit `.env`. For the current local setup, use Codex for chat and local retrieval/reranking:
+
+```bash
+EMBEDDING_PROVIDER=local
+RERANK_PROVIDER=local
+CHAT_PROVIDER=codex
+```
+
+Production-quality semantic retrieval can use Voyage embeddings/reranking and Claude via the Anthropic SDK:
 
 ```bash
 EMBEDDING_PROVIDER=voyage
@@ -35,7 +45,7 @@ AWS_REGION=us-east-1
 ANTHROPIC_MODEL=claude-opus-4-7
 ```
 
-To route chat through the local Codex CLI instead of Anthropic:
+Codex chat uses your local Codex login/config:
 
 ```bash
 CHAT_PROVIDER=codex
@@ -59,6 +69,16 @@ RERANK_PROVIDER=local
 CHAT_PROVIDER=mock
 ```
 
+## Transcript Corpus
+
+The real transcript corpus used during development lives at:
+
+```bash
+/Users/nick/tmp/tlos
+```
+
+It contains scraped `.txt` transcripts from the Ancient Faith *Lord of Spirits* podcast pages. The indexed files use speaker labels like `Fr. Andrew:`, `Fr. Stephen:`, callers, and occasional full-name labels.
+
 ## Transcript Format
 
 The parser expects plain text with speaker prefixes:
@@ -75,7 +95,7 @@ Optional timestamps are supported at the start of a turn:
 [00:01:23] Fr. Andrew: Text...
 ```
 
-Your scraped transcripts do not contain source timestamps, so ingest estimates timestamps from word count. Citations from those files are marked as `estimated`.
+The scraped Lord of Spirits transcripts do not contain source timestamps, so ingest estimates timestamps from word count. Citations from those files are marked as `estimated`.
 
 ## Commands
 
@@ -91,7 +111,14 @@ Search without calling Claude:
 python -m rag.cli search "divine council and angels" --host "Fr. Stephen De Young"
 ```
 
-Bootstrap host personas after ingest:
+Persona guides live in:
+
+```bash
+personas/persona_fr_andrew_stephen_damick.md
+personas/persona_fr_stephen_de_young.md
+```
+
+These files are generated from sampled primary-speaker chunks in the local RAG database and are intentionally hand-editable. To regenerate them with an Anthropic-compatible provider, run:
 
 ```bash
 python -m rag.cli bootstrap-persona --host "Fr. Andrew Stephen Damick"
@@ -115,7 +142,7 @@ Single-message mode:
 python -m rag.cli chat --both --message "How do they talk about angels and worship?"
 ```
 
-Codex-backed chat:
+Codex-backed Lord of Spirits chat:
 
 ```bash
 python -m rag.cli chat --both --message "What do they say about the divine council?"
@@ -147,7 +174,7 @@ python -m rag.cli chat --both --message "What is a temple doing in biblical symb
 
 ## Notes
 
-- `personas/persona_*.md` are intentionally hand-editable and are loaded into the static cached persona prompt.
+- `personas/persona_*.md` are Lord of Spirits-specific, hand-editable, and loaded into the static persona prompt.
 - `data/` contains LanceDB, the chunk catalog, and embedding cache. It is gitignored.
 - The embedding cache makes repeated ingest runs resumable for unchanged chunks.
 - Host-filtered chat retrieves chunks where the selected host is the primary speaker, then includes nearby context for continuity.
