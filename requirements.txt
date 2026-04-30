@@ -1,0 +1,7 @@
+anthropic==0.74.0
+lancedb==0.25.3
+openai==2.7.1
+python-dotenv==1.2.1
+rank-bm25==0.2.2
+voyageai==0.3.5
+
