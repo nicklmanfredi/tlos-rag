@@ -1,4 +1,4 @@
-# Podcast Persona RAG
+# The Lord of Spirits RAG
 
 CLI-only RAG system for chatting with Claude in one of two podcast-host personas, both hosts together, or a merged show voice. It ingests plain-text transcripts with speaker labels, chunks them by rolling speech windows, stores local vectors in LanceDB, merges semantic search with BM25 keyword search, reranks with Voyage, and sends cited transcript excerpts to Claude.
 
