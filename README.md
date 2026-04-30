@@ -1,6 +1,6 @@
 # The Lord of Spirits RAG
 
-Private CLI RAG system for searching and chatting with a local index of *The Lord of Spirits* podcast transcripts. It supports transcript-grounded persona chat inspired by the two hosts, Fr. Andrew Stephen Damick and Fr. Stephen De Young, either individually, together, or as a merged "show" voice.
+CLI RAG system for searching and chatting with a locally built index of *The Lord of Spirits* podcast transcripts. It supports transcript-grounded persona chat inspired by the two hosts, Fr. Andrew Stephen Damick and Fr. Stephen De Young, either individually, together, or as a merged "show" voice.
 
 The system ingests the scraped Ancient Faith transcript `.txt` files, parses speaker labels, chunks the conversations into rolling windows, stores local vectors in LanceDB, merges semantic search with BM25 keyword search, and sends cited Lord of Spirits transcript context to the configured LLM provider. On this machine it is currently set up to use the local `codex` CLI for chat, with local keyword retrieval/reranking for no-key operation.
 
@@ -71,7 +71,16 @@ CHAT_PROVIDER=mock
 
 ## Transcript Corpus
 
-The real transcript corpus used during development lives at:
+The repo does not commit the real transcript `.txt` files or generated LanceDB index. To fetch available transcripts from Ancient Faith:
+
+```bash
+python scripts/fetch_lord_of_spirits_transcripts.py --out transcripts/lordofspirits
+python -m rag.cli ingest transcripts/lordofspirits
+```
+
+The scraper scans the 28 podcast index pages, visits each episode page, extracts pages with a `#transcript-reader` block, and writes files as `<episode-slug>.txt`. Episodes without transcripts are skipped.
+
+The real transcript corpus used during development lived at:
 
 ```bash
 /Users/nick/tmp/tlos
