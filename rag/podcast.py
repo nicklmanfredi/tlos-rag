@@ -9,7 +9,7 @@ from pathlib import Path
 from openai import OpenAI
 
 from .chat import TURN_LABELS, answer_once
-from .config import Settings
+from .config import HOSTS, Settings
 
 
 MAX_TTS_CHARS = 3500
@@ -17,9 +17,11 @@ TURN_PAUSE_MS = 550
 LAUGHTER_PAUSE_MS = 850
 BEAT_PAUSE_MS = 500
 
-SPEAKER_TO_SETTING = {
-    TURN_LABELS["fr_andrew_stephen_damick"]: "andrew",
-    TURN_LABELS["fr_stephen_de_young"]: "stephen",
+# Cycle hosts through the two available voice slots (andrew, stephen, andrew, …).
+_voice_keys = ["andrew", "stephen"]
+SPEAKER_TO_SETTING: dict[str, str] = {
+    TURN_LABELS[slug]: _voice_keys[i % len(_voice_keys)]
+    for i, slug in enumerate(TURN_LABELS)
 }
 
 VOICE_INSTRUCTIONS = {
@@ -75,7 +77,7 @@ def generate_podcast(
     )
     segments = parse_speech_segments(script)
     if not segments:
-        raise ValueError("No Fr. Andrew/Fr. Stephen transcript turns were found in the generated script.")
+        raise ValueError("No host transcript turns were found in the generated script.")
 
     out_path = out_path.expanduser()
     script_path = (script_path or out_path.with_suffix(".txt")).expanduser()
@@ -96,7 +98,7 @@ def synthesize_podcast_from_script(script_path: Path, settings: Settings, out_pa
     script = script_path.read_text(encoding="utf-8")
     segments = parse_speech_segments(script)
     if not segments:
-        raise ValueError("No Fr. Andrew/Fr. Stephen transcript turns were found in the script file.")
+        raise ValueError("No host transcript turns were found in the script file.")
 
     out_path.parent.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory() as tmp:
@@ -106,18 +108,30 @@ def synthesize_podcast_from_script(script_path: Path, settings: Settings, out_pa
     return PodcastResult(out_path=out_path, script_path=script_path, segments=len(segments))
 
 
+def _build_label_map() -> dict[str, str]:
+    """Map every recognized label (display names + aliases) to its canonical display name."""
+    label_map: dict[str, str] = {}
+    for slug, display in TURN_LABELS.items():
+        label_map[display.lower()] = display
+        for alias in HOSTS.get(slug, {}).get("aliases", set()):
+            label_map[alias.lower()] = display
+    return label_map
+
+
 def parse_speech_segments(script: str) -> list[SpeechSegment]:
+    label_map = _build_label_map()
+    all_labels = "|".join(re.escape(label) for label in sorted(label_map, key=len, reverse=True))
+    label_re = re.compile(rf"^\s*({all_labels})\s*:\s*(.*)$", re.IGNORECASE)
     segments: list[SpeechSegment] = []
     current_speaker: str | None = None
     current_lines: list[str] = []
-    label_re = re.compile(r"^\s*(Fr\. Andrew|Fr\. Stephen)\s*:\s*(.*)$")
 
     for line in script.splitlines():
         match = label_re.match(line)
         if match:
             if current_speaker and current_lines:
                 segments.append(SpeechSegment(current_speaker, "\n".join(current_lines).strip()))
-            current_speaker = match.group(1)
+            current_speaker = label_map[match.group(1).lower()]
             current_lines = [match.group(2).strip()] if match.group(2).strip() else []
             continue
         if current_speaker:

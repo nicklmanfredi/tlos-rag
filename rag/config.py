@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import os
 import re
 from dataclasses import dataclass
@@ -9,29 +10,6 @@ from dotenv import load_dotenv
 
 
 load_dotenv()
-
-HOSTS = {
-    "fr_andrew_stephen_damick": {
-        "display": "Fr. Andrew Stephen Damick",
-        "aliases": {
-            "fr. andrew stephen damick",
-            "fr andrew stephen damick",
-            "fr. andrew",
-            "fr andrew",
-            "andrew",
-        },
-    },
-    "fr_stephen_de_young": {
-        "display": "Fr. Stephen De Young",
-        "aliases": {
-            "fr. stephen de young",
-            "fr stephen de young",
-            "fr. stephen",
-            "fr stephen",
-            "stephen",
-        },
-    },
-}
 
 
 def project_root() -> Path:
@@ -44,12 +22,41 @@ def slugify(value: str) -> str:
     return value.strip("_")
 
 
+def _load_podcast_config() -> dict:
+    env_path = os.getenv("PODCAST_CONFIG")
+    if env_path:
+        config_path = Path(env_path).expanduser()
+        if not config_path.exists():
+            raise FileNotFoundError(f"PODCAST_CONFIG={env_path!r} not found")
+        with open(config_path, encoding="utf-8") as f:
+            cfg = json.load(f)
+        if not cfg.get("hosts"):
+            raise ValueError(f"PODCAST_CONFIG={env_path!r} defines no hosts")
+        return cfg
+    config_path = project_root() / "podcast.json"
+    if config_path.exists():
+        with open(config_path, encoding="utf-8") as f:
+            return json.load(f)
+    return {"name": "Podcast", "hosts": {}}
+
+
+_podcast_config = _load_podcast_config()
+PODCAST_NAME: str = _podcast_config.get("name", "Podcast")
+HOSTS: dict = {
+    slug: {
+        "display": meta["display"],
+        "aliases": set(meta["aliases"]),
+    }
+    for slug, meta in _podcast_config.get("hosts", {}).items()
+}
+
+
 def canonical_speaker(label: str) -> str:
     normalized = re.sub(r"\s+", " ", label.strip().lower().rstrip(":"))
-    if "andrew" in normalized:
-        return "fr_andrew_stephen_damick"
-    if "stephen" in normalized:
-        return "fr_stephen_de_young"
+    for slug, meta in HOSTS.items():
+        for alias in meta["aliases"]:
+            if alias in normalized:
+                return slug
     return "other"
 
 
@@ -77,6 +84,7 @@ class Settings:
     chunk_catalog: Path
     embedding_cache: Path
     personas_dir: Path
+    podcast_name: str
     embedding_provider: str
     embedding_model: str
     rerank_provider: str
@@ -104,6 +112,7 @@ def settings() -> Settings:
         chunk_catalog=Path(os.getenv("CHUNK_CATALOG", data_dir / "chunks.jsonl")).expanduser(),
         embedding_cache=Path(os.getenv("EMBEDDING_CACHE", data_dir / "embedding_cache.jsonl")).expanduser(),
         personas_dir=Path(os.getenv("PERSONAS_DIR", root / "personas")).expanduser(),
+        podcast_name=PODCAST_NAME,
         embedding_provider=os.getenv("EMBEDDING_PROVIDER", "voyage").lower(),
         embedding_model=os.getenv("EMBEDDING_MODEL", "voyage-3"),
         rerank_provider=os.getenv("RERANK_PROVIDER", "voyage").lower(),

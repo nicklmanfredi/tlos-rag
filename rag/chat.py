@@ -24,16 +24,6 @@ FORBIDDEN_PUBLIC_META_PATTERNS = [
     )
 ]
 
-BASE_INSTRUCTIONS = """You are powering a source-grounded persona chat for The Lord of Spirits podcast.
-Use the supplied source material for factual recall. Treat it as private research notes, not as something to discuss.
-Do not include citations in the public answer. The source citations are only for private grounding and should not be read aloud.
-Never mention transcripts, excerpts, retrieved context, indexed material, search, or evidence-gathering in the public answer.
-If the source material does not support a factual answer, do not call attention to the gap; answer only with the closest directly supported point, narrow the claim, or omit the unsupported detail.
-Stay in character for voice, cadence, humor, and emphasis, but do not claim to be the real person.
-Reason through the actual idea before making a joke. Humor should come from a concrete contrast, modern category mistake, or absurd implication already present in the answer.
-When a joke or dry aside needs timing, use [beat] before the turn or [Laughter] after it. Use these markers sparingly.
-"""
-
 BRIEFING_INSTRUCTIONS = """You prepare private notes for a source-grounded podcast answer.
 Use only the source items and the user's question.
 Do not imitate a host voice.
@@ -43,17 +33,27 @@ Produce a structured briefing with:
 - Central thesis: the main answer in one or two sentences.
 - Concept map: key terms, distinctions, and background assumptions needed to explain the idea clearly.
 - Grounded claims: 5 to 9 claims, each with episode/timestamp citations and the exact role it should play in the answer.
-- Connections: how the claims fit together, including causal, biblical, liturgical, historical, or polemical relationships.
+- Connections: how the claims fit together, including causal, historical, thematic, or rhetorical relationships.
 - Tensions and limits: real qualifications, ambiguities, or places to avoid overclaiming.
 - Answer path: a concise sequence of moves the final answer should make.
 - Natural voice moments: one or two comic or conversational angles rooted in the material, not generic jokes.
 This briefing is private. It may mention transcript evidence internally, but the later public answer must not mention transcripts, excerpts, search, retrieval, or missing evidence.
 """
 
-TURN_LABELS = {
-    "fr_andrew_stephen_damick": "Fr. Andrew",
-    "fr_stephen_de_young": "Fr. Stephen",
-}
+TURN_LABELS: dict[str, str] = {slug: host_display(slug) for slug in HOSTS}
+
+
+def _base_instructions(podcast_name: str) -> str:
+    return (
+        f"You are powering a source-grounded persona chat for {podcast_name}.\n"
+        "Use the supplied source material for factual recall. Treat it as private research notes, not as something to discuss.\n"
+        "Do not include citations in the public answer. The source citations are only for private grounding and should not be read aloud.\n"
+        "Never mention transcripts, excerpts, retrieved context, indexed material, search, or evidence-gathering in the public answer.\n"
+        "If the source material does not support a factual answer, do not call attention to the gap; answer only with the closest directly supported point, narrow the claim, or omit the unsupported detail.\n"
+        "Stay in character for voice, cadence, humor, and emphasis, but do not claim to be the real person.\n"
+        "Reason through the actual idea before making a joke. Humor should come from a concrete contrast, modern category mistake, or absurd implication already present in the answer.\n"
+        "When a joke or dry aside needs timing, use [beat] before the turn or [Laughter] after it. Use these markers sparingly.\n"
+    )
 
 
 def load_persona(settings: Settings, slug: str) -> str:
@@ -64,20 +64,21 @@ def load_persona(settings: Settings, slug: str) -> str:
 
 
 def build_static_prompt(settings: Settings, mode: str, host: str | None) -> str:
+    base = _base_instructions(settings.podcast_name)
     if mode == "host":
         slug = host_slug(host or "")
         return (
-            BASE_INSTRUCTIONS
+            base
             + f"\nRespond only as {host_display(slug)}.\n\n"
             + f"<persona name=\"{host_display(slug)}\">\n{load_persona(settings, slug)}\n</persona>"
         )
     if mode == "show":
-        return BASE_INSTRUCTIONS + "\nRespond as a merged show voice, prioritizing factual clarity over host-specific fidelity."
+        return base + "\nRespond as a merged show voice, prioritizing factual clarity over host-specific fidelity."
     personas = []
     for slug in HOSTS:
         personas.append(f"<persona name=\"{host_display(slug)}\">\n{load_persona(settings, slug)}\n</persona>")
     return (
-        BASE_INSTRUCTIONS
+        base
         + "\nYou have both host personas. Write a brief podcast-style exchange when using this prompt directly.\n\n"
         + "\n\n".join(personas)
     )
@@ -192,7 +193,7 @@ def answer_both_turns(
 def build_turn_prompt(settings: Settings, speaker_slug: str) -> str:
     display = host_display(speaker_slug)
     return (
-        BASE_INSTRUCTIONS
+        _base_instructions(settings.podcast_name)
         + "\nYou are generating exactly one turn in a multi-host podcast-style answer. "
         f"Respond only as {display}. Do not write dialogue for the other host. "
         "Do not include a speaker label; the CLI will add it. "
@@ -292,7 +293,6 @@ def answer_public_with_provider(static_prompt: str, user_text: str, settings: Se
 
 
 def clean_public_answer(text: str) -> str:
-    """Remove public-facing retrieval chatter if the model leaks it."""
     cleaned_lines = []
     for line in text.splitlines():
         stripped = line.strip()
@@ -349,10 +349,11 @@ def format_turn_transcript(turns: list[tuple[str, str]]) -> str:
 
 
 def strip_speaker_label(text: str, speaker_slug: str) -> str:
-    label = TURN_LABELS.get(speaker_slug, host_display(speaker_slug))
-    display = host_display(speaker_slug)
-    pattern = rf"^\s*(?:{re.escape(label)}|{re.escape(display)})\s*:\s*"
-    return re.sub(pattern, "", text, count=1)
+    labels = {host_display(speaker_slug), TURN_LABELS.get(speaker_slug, host_display(speaker_slug))}
+    for alias in HOSTS.get(speaker_slug, {}).get("aliases", set()):
+        labels.add(alias)
+    pattern = r"^\s*(?:" + "|".join(re.escape(l) for l in sorted(labels, key=len, reverse=True)) + r")\s*:\s*"
+    return re.sub(pattern, "", text, count=1, flags=re.IGNORECASE)
 
 
 def answer_with_provider(
