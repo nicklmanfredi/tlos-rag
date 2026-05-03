@@ -143,12 +143,18 @@ python -m rag.cli chat --both
 python -m rag.cli chat --show
 ```
 
+`--both` alternates repeated LLM calls between the two host personas and prints the result as a transcript-style exchange. The default is 4 turns; adjust it with:
+
+```bash
+python -m rag.cli chat --both --turns 6
+```
+
 In interactive chat, press `Esc` to exit.
 
 Single-message mode:
 
 ```bash
-python -m rag.cli chat --both --message "How do they talk about angels and worship?"
+python -m rag.cli chat --both --turns 4 --message "How do they talk about angels and worship?"
 ```
 
 Codex-backed Lord of Spirits chat:

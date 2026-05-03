@@ -34,6 +34,7 @@ def main() -> None:
     chat.add_argument("--both", action="store_true", default=False)
     chat.add_argument("--show", action="store_true", default=False)
     chat.add_argument("--message")
+    chat.add_argument("--turns", type=int, default=4, help="Number of alternating host turns when using --both.")
 
     args = parser.parse_args()
     cfg = settings()
@@ -52,7 +53,7 @@ def main() -> None:
     elif args.command == "chat":
         mode = "show" if args.show else "host" if args.host else "both"
         if args.message:
-            answer_once(args.message, cfg, mode=mode, host=args.host, stream=True)
+            answer_once(args.message, cfg, mode=mode, host=args.host, stream=True, turns=args.turns)
             return
         print("Press Esc to exit.")
         while True:
@@ -64,7 +65,7 @@ def main() -> None:
             if not message:
                 continue
             print()
-            answer_once(message, cfg, mode=mode, host=args.host, stream=True)
+            answer_once(message, cfg, mode=mode, host=args.host, stream=True, turns=args.turns)
 
 
 def read_repl_line(prompt: str) -> str | None:

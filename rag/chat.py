@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import re
 import subprocess
 from pathlib import Path
 
@@ -16,6 +17,11 @@ Do not say "the excerpts," "the retrieved context," "the provided transcript," "
 If the transcript context does not support a factual answer, say "I can't verify that in the indexed transcripts" in the selected persona's voice instead of inventing details.
 Stay in character for voice, cadence, humor, and emphasis, but do not claim to be the real person.
 """
+
+TURN_LABELS = {
+    "fr_andrew_stephen_damick": "Fr. Andrew",
+    "fr_stephen_de_young": "Fr. Stephen",
+}
 
 
 def load_persona(settings: Settings, slug: str) -> str:
@@ -40,9 +46,7 @@ def build_static_prompt(settings: Settings, mode: str, host: str | None) -> str:
         personas.append(f"<persona name=\"{host_display(slug)}\">\n{load_persona(settings, slug)}\n</persona>")
     return (
         BASE_INSTRUCTIONS
-        + "\nYou have both host personas. Usually pick the host whose voice best fits the question. "
-        "Use a brief two-host exchange only when the question genuinely benefits from both perspectives. "
-        "This is one Claude call; do not simulate independent agents.\n\n"
+        + "\nYou have both host personas. Write a brief transcript-style exchange when using this prompt directly.\n\n"
         + "\n\n".join(personas)
     )
 
@@ -61,8 +65,19 @@ def format_excerpts(chunks: list[dict]) -> str:
     return "\n".join(lines)
 
 
-def answer_once(message: str, settings: Settings, mode: str = "both", host: str | None = None, stream: bool = True) -> str:
+def answer_once(
+    message: str,
+    settings: Settings,
+    mode: str = "both",
+    host: str | None = None,
+    stream: bool = True,
+    turns: int = 4,
+) -> str:
     chunks = retrieve(message, settings, host=host if mode == "host" else None)
+
+    if mode == "both":
+        return answer_both_turns(message, settings, chunks, turns=turns, stream=stream)
+
     static_prompt = build_static_prompt(settings, mode, host)
     user_text = f"{format_excerpts(chunks)}\n\n<user_message>\n{message}\n</user_message>"
 
@@ -74,6 +89,94 @@ def answer_once(message: str, settings: Settings, mode: str = "both", host: str 
             print(response)
         return response
 
+    return answer_with_provider(static_prompt, user_text, settings, stream=stream)
+
+
+def answer_both_turns(message: str, settings: Settings, chunks: list[dict], turns: int, stream: bool = True) -> str:
+    turn_count = max(1, turns)
+    host_order = tuple(HOSTS)
+    transcript_turns: list[tuple[str, str]] = []
+    context = format_excerpts(chunks)
+
+    if settings.chat_provider == "mock":
+        retrieved = "\n".join(
+            f'- {c["episode_title"]} {format_time(c["start_seconds"])}: {c["text"][:120]}...' for c in chunks[:3]
+        )
+        for index in range(turn_count):
+            slug = host_order[index % len(host_order)]
+            text = f"[mock chat provider] Turn {index + 1}. Retrieved excerpts:\n{retrieved}"
+            transcript_turns.append((slug, text))
+        response = format_turn_transcript(transcript_turns)
+        if stream:
+            print(response)
+        return response
+
+    for index in range(turn_count):
+        slug = host_order[index % len(host_order)]
+        static_prompt = build_turn_prompt(settings, slug)
+        user_text = build_turn_user_text(
+            context=context,
+            original_message=message,
+            transcript_turns=transcript_turns,
+            speaker_slug=slug,
+            is_final_turn=index == turn_count - 1,
+        )
+        text = answer_with_provider(static_prompt, user_text, settings, stream=False)
+        text = strip_speaker_label(text, slug).strip()
+        transcript_turns.append((slug, text))
+        if stream:
+            print(f"{TURN_LABELS.get(slug, host_display(slug))}: {text}\n")
+
+    return format_turn_transcript(transcript_turns)
+
+
+def build_turn_prompt(settings: Settings, speaker_slug: str) -> str:
+    display = host_display(speaker_slug)
+    return (
+        BASE_INSTRUCTIONS
+        + "\nYou are generating exactly one turn in a multi-host transcript-style answer. "
+        f"Respond only as {display}. Do not write dialogue for the other host. "
+        "Do not include a speaker label; the CLI will add it. "
+        "Keep the turn conversational and responsive to what has already been said.\n\n"
+        + f"<persona name=\"{display}\">\n{load_persona(settings, speaker_slug)}\n</persona>"
+    )
+
+
+def build_turn_user_text(
+    context: str,
+    original_message: str,
+    transcript_turns: list[tuple[str, str]],
+    speaker_slug: str,
+    is_final_turn: bool,
+) -> str:
+    conversation = format_turn_transcript(transcript_turns) if transcript_turns else "(no host turns yet)"
+    finish_instruction = (
+        "This is the final planned turn, so bring the answer to a natural stopping point."
+        if is_final_turn
+        else "Leave room for the other host to continue the exchange."
+    )
+    return (
+        f"{context}\n\n"
+        f"<user_message>\n{original_message}\n</user_message>\n\n"
+        f"<conversation_so_far>\n{conversation}\n</conversation_so_far>\n\n"
+        f"Write the next transcript turn as {host_display(speaker_slug)}. "
+        "Answer the user's question through the conversation rather than meta-commenting on the format. "
+        f"{finish_instruction}"
+    )
+
+
+def format_turn_transcript(turns: list[tuple[str, str]]) -> str:
+    return "\n\n".join(f"{TURN_LABELS.get(slug, host_display(slug))}: {text}" for slug, text in turns)
+
+
+def strip_speaker_label(text: str, speaker_slug: str) -> str:
+    label = TURN_LABELS.get(speaker_slug, host_display(speaker_slug))
+    display = host_display(speaker_slug)
+    pattern = rf"^\s*(?:{re.escape(label)}|{re.escape(display)})\s*:\s*"
+    return re.sub(pattern, "", text, count=1)
+
+
+def answer_with_provider(static_prompt: str, user_text: str, settings: Settings, stream: bool) -> str:
     if settings.chat_provider == "codex":
         return answer_with_codex(static_prompt, user_text, settings, stream=stream)
 
