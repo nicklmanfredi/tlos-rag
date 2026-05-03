@@ -1,12 +1,12 @@
 from __future__ import annotations
 
 import re
-from collections import defaultdict
+from collections import Counter, defaultdict
 
 from rank_bm25 import BM25Okapi
 
 from .config import Settings, host_slug
-from .embeddings import STOPWORDS, embed_texts, rerank
+from .embeddings import STOPWORDS, content_terms, embed_texts, rerank
 from .store import load_catalog, open_table
 
 
@@ -22,8 +22,6 @@ def retrieve(
     search_backend: str = "rag",
 ) -> list[dict]:
     if search_backend == "agentic":
-        from .text_search import retrieve_agentic
-
         return retrieve_agentic(query, settings, host=host, final_k=final_k)
     if search_backend == "text":
         from .text_search import retrieve_text
@@ -32,23 +30,142 @@ def retrieve(
     if search_backend != "rag":
         raise ValueError(f"Unsupported search_backend={search_backend}")
 
+    host_filter, catalog, searchable = searchable_catalog(settings, host)
+    if not searchable:
+        return []
+
+    ranked = retrieve_rag(query, settings, catalog, searchable, host_filter, final_k)
+    return ranked[:final_k]
+
+
+def searchable_catalog(settings: Settings, host: str | None = None) -> tuple[str | None, list[dict], list[dict]]:
     host_filter = host_slug(host) if host else None
     catalog = load_catalog(settings)
-    if host_filter:
-        searchable = [row for row in catalog if row["primary_speaker"] == host_filter]
-    else:
-        searchable = catalog
+    searchable = [row for row in catalog if row["primary_speaker"] == host_filter] if host_filter else catalog
+    return host_filter, catalog, searchable
+
+
+def retrieve_rag(
+    query: str,
+    settings: Settings,
+    catalog: list[dict],
+    searchable: list[dict],
+    host_filter: str | None,
+    final_k: int,
+) -> list[dict]:
     if not searchable:
         return []
 
     semantic = [] if settings.embedding_provider == "local" else semantic_search(query, settings, host_filter, limit=20)
     keyword = bm25_search(query, searchable, limit=20)
     fused = reciprocal_rank_fusion([semantic, keyword])
-    candidates = [row for row in fused[:24]]
-    ranked = rerank(query, candidates, settings, top_k=final_k)
-    if host_filter:
-        ranked = add_neighbors(ranked, catalog, final_k)
-    return ranked[:final_k]
+    candidates = fused[:32]
+    ranked = rerank(query, candidates, settings, top_k=max(final_k * 2, final_k + 4))
+    expanded = add_neighbors(ranked, catalog, max(final_k * 2, final_k + 4))
+    return rerank(query, expanded, settings, top_k=final_k)
+
+
+def retrieve_agentic(query: str, settings: Settings, host: str | None = None, final_k: int = 8) -> list[dict]:
+    from .text_search import plan_agentic_queries, rank_agentic_evidence, retrieve_agentic as retrieve_text_agentic
+
+    host_filter, catalog, searchable = searchable_catalog(settings, host)
+    if not searchable:
+        return retrieve_text_agentic(query, settings, host=host, final_k=final_k)
+
+    planned_queries = plan_agentic_queries(query)
+    rankings = [
+        retrieve_rag(
+            planned_query,
+            settings,
+            catalog,
+            searchable,
+            host_filter,
+            final_k=max(final_k * 2, final_k + 4),
+        )
+        for planned_query in planned_queries
+    ]
+    fused = reciprocal_rank_fusion(rankings)
+    expansion_queries = corpus_expansion_queries(query, fused[:12], planned_queries)
+    if expansion_queries:
+        planned_queries.extend(expansion_queries)
+        rankings.extend(
+            retrieve_rag(
+                planned_query,
+                settings,
+                catalog,
+                searchable,
+                host_filter,
+                final_k=max(final_k * 2, final_k + 4),
+            )
+            for planned_query in expansion_queries
+        )
+        fused = reciprocal_rank_fusion(rankings)
+    expanded = add_neighbors(fused, catalog, max(final_k * 3, final_k + 8))
+    ranked = rank_agentic_evidence(query, planned_queries, expanded)
+    ranked = rerank(" ".join([query, *planned_queries]), ranked[: max(final_k * 3, 24)], settings, top_k=final_k)
+    for row in ranked:
+        row["agentic_queries"] = planned_queries
+    return ranked
+
+
+def corpus_expansion_queries(
+    original_query: str,
+    rows: list[dict],
+    existing_queries: list[str],
+    max_queries: int = 4,
+) -> list[str]:
+    original_terms = ordered_unique_terms(original_query)
+    if not original_terms or not rows:
+        return []
+
+    original_set = set(original_terms)
+    counts: Counter[str] = Counter()
+    title_counts: Counter[str] = Counter()
+    for row in rows:
+        title_terms = content_terms(row.get("episode_title", ""))
+        text_terms = content_terms(row.get("text", ""))
+        for term in text_terms - original_set:
+            if len(term) > 4:
+                counts[term] += 1
+        for term in title_terms - original_set:
+            if len(term) > 4:
+                title_counts[term] += 1
+
+    for term, count in title_counts.items():
+        counts[term] += count * 2
+
+    anchors = original_terms[:4]
+    expansions = [term for term, _ in counts.most_common(16)]
+    candidates = []
+    for start in range(0, len(expansions), 4):
+        group = expansions[start : start + 4]
+        if len(group) >= 2:
+            candidates.append(" ".join([*anchors, *group]))
+        if len(candidates) >= max_queries:
+            break
+
+    seen = {normalize_query_text(query) for query in existing_queries}
+    planned = []
+    for candidate in candidates:
+        normalized = normalize_query_text(candidate)
+        if normalized and normalized not in seen:
+            planned.append(normalized)
+            seen.add(normalized)
+    return planned
+
+
+def ordered_unique_terms(text: str) -> list[str]:
+    seen: set[str] = set()
+    terms: list[str] = []
+    for term in tokenize(text):
+        if term not in seen:
+            terms.append(term)
+            seen.add(term)
+    return terms
+
+
+def normalize_query_text(text: str) -> str:
+    return " ".join(tokenize(text))
 
 
 def semantic_search(query: str, settings: Settings, host_filter: str | None, limit: int) -> list[dict]:

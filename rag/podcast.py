@@ -13,6 +13,9 @@ from .config import Settings
 
 
 MAX_TTS_CHARS = 3500
+TURN_PAUSE_MS = 550
+LAUGHTER_PAUSE_MS = 850
+BEAT_PAUSE_MS = 500
 
 SPEAKER_TO_SETTING = {
     TURN_LABELS["fr_andrew_stephen_damick"]: "andrew",
@@ -22,11 +25,13 @@ SPEAKER_TO_SETTING = {
 VOICE_INSTRUCTIONS = {
     "andrew": (
         "Use a generic synthetic American male-presenting voice. Sound conversational, lightly nerdy, "
-        "clear, and friendly, with a mild Midwestern public-radio cadence. Do not imitate any real person."
+        "clear, and friendly, with a mild Midwestern public-radio cadence. React to jokes and qualifications "
+        "as live speech, not as narration. Do not imitate any real person."
     ),
     "stephen": (
         "Use a different generic synthetic American male-presenting voice. Sound dry, bookish, precise, "
-        "and lightly amused, with a mild Midwestern seminar-room cadence. Do not imitate any real person."
+        "and lightly amused, with a mild Midwestern seminar-room cadence. Let deadpan lines land plainly, "
+        "with small pauses where the syntax turns. Do not imitate any real person."
     ),
 }
 
@@ -42,6 +47,12 @@ class PodcastResult:
 class SpeechSegment:
     speaker: str
     text: str
+
+
+@dataclass(frozen=True)
+class AudioClip:
+    path: Path | None = None
+    silence_ms: int = 0
 
 
 def generate_podcast(
@@ -73,8 +84,8 @@ def generate_podcast(
     script_path.write_text(script, encoding="utf-8")
 
     with tempfile.TemporaryDirectory() as tmp:
-        segment_paths = synthesize_segments(segments, settings, Path(tmp))
-        stitch_wav(segment_paths, out_path)
+        clips = synthesize_segments(segments, settings, Path(tmp))
+        stitch_wav(clips, out_path)
 
     return PodcastResult(out_path=out_path, script_path=script_path, segments=len(segments))
 
@@ -89,8 +100,8 @@ def synthesize_podcast_from_script(script_path: Path, settings: Settings, out_pa
 
     out_path.parent.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory() as tmp:
-        segment_paths = synthesize_segments(segments, settings, Path(tmp))
-        stitch_wav(segment_paths, out_path)
+        clips = synthesize_segments(segments, settings, Path(tmp))
+        stitch_wav(clips, out_path)
 
     return PodcastResult(out_path=out_path, script_path=script_path, segments=len(segments))
 
@@ -117,26 +128,66 @@ def parse_speech_segments(script: str) -> list[SpeechSegment]:
     return [segment for segment in segments if segment.text]
 
 
-def synthesize_segments(segments: list[SpeechSegment], settings: Settings, tmp_dir: Path) -> list[Path]:
+def synthesize_segments(segments: list[SpeechSegment], settings: Settings, tmp_dir: Path) -> list[AudioClip]:
     client = OpenAI()
-    paths = []
+    clips: list[AudioClip] = []
     audio_index = 0
-    for segment in segments:
+    for segment_index, segment in enumerate(segments):
+        if segment_index:
+            clips.append(AudioClip(silence_ms=TURN_PAUSE_MS))
         voice_key = SPEAKER_TO_SETTING[segment.speaker]
         voice = settings.tts_voice_andrew if voice_key == "andrew" else settings.tts_voice_stephen
-        for text in split_for_tts(segment.text):
-            audio_index += 1
-            path = tmp_dir / f"segment_{audio_index:03d}.wav"
-            response = client.audio.speech.create(
-                model=settings.tts_model,
-                voice=voice,
-                input=text,
-                instructions=VOICE_INSTRUCTIONS[voice_key],
-                response_format="wav",
-            )
-            response.write_to_file(path)
-            paths.append(path)
-    return paths
+        for part in split_timing_parts(segment.text):
+            if isinstance(part, int):
+                clips.append(AudioClip(silence_ms=part))
+                continue
+            for text in split_for_tts(part):
+                audio_index += 1
+                path = tmp_dir / f"segment_{audio_index:03d}.wav"
+                response = client.audio.speech.create(
+                    model=settings.tts_model,
+                    voice=voice,
+                    input=text,
+                    instructions=VOICE_INSTRUCTIONS[voice_key],
+                    response_format="wav",
+                )
+                response.write_to_file(path)
+                clips.append(AudioClip(path=path))
+    return clips
+
+
+def split_timing_parts(text: str) -> list[str | int]:
+    parts: list[str | int] = []
+    cursor = 0
+    marker_re = re.compile(r"\[(?:laughter|laughs?|pause|beat)\]", re.IGNORECASE)
+    for match in marker_re.finditer(text):
+        before = normalize_tts_text(text[cursor : match.start()])
+        if before:
+            parts.append(before)
+        marker = match.group(0).lower()
+        parts.append(LAUGHTER_PAUSE_MS if "laugh" in marker else BEAT_PAUSE_MS)
+        cursor = match.end()
+
+    remainder = normalize_tts_text(text[cursor:])
+    if remainder:
+        parts.append(remainder)
+    return compact_timing_parts(parts)
+
+
+def normalize_tts_text(text: str) -> str:
+    text = re.sub(r"\s*\n\s*", " ", text)
+    text = re.sub(r"\s+", " ", text)
+    return text.strip()
+
+
+def compact_timing_parts(parts: list[str | int]) -> list[str | int]:
+    compact: list[str | int] = []
+    for part in parts:
+        if isinstance(part, int) and compact and isinstance(compact[-1], int):
+            compact[-1] += part
+        elif part:
+            compact.append(part)
+    return compact
 
 
 def split_for_tts(text: str, max_chars: int = MAX_TTS_CHARS) -> list[str]:
@@ -167,12 +218,16 @@ def split_for_tts(text: str, max_chars: int = MAX_TTS_CHARS) -> list[str]:
     return chunks
 
 
-def stitch_wav(segment_paths: list[Path], out_path: Path, silence_ms: int = 450) -> None:
+def stitch_wav(clips: list[AudioClip], out_path: Path) -> None:
     audio_format: tuple[int, int, int, str, str] | None = None
-    frames: list[bytes] = []
-    silence_frames = b""
+    frame_items: list[bytes | int] = []
 
-    for path in segment_paths:
+    for clip in clips:
+        if clip.path is None:
+            if clip.silence_ms > 0:
+                frame_items.append(clip.silence_ms)
+            continue
+        path = clip.path
         with wave.open(str(path), "rb") as src:
             current_format = (
                 src.getnchannels(),
@@ -183,11 +238,9 @@ def stitch_wav(segment_paths: list[Path], out_path: Path, silence_ms: int = 450)
             )
             if audio_format is None:
                 audio_format = current_format
-                silence_count = int(src.getframerate() * silence_ms / 1000)
-                silence_frames = b"\x00" * silence_count * src.getnchannels() * src.getsampwidth()
             elif current_format != audio_format:
                 raise ValueError("TTS returned WAV segments with incompatible audio parameters.")
-            frames.append(src.readframes(src.getnframes()))
+            frame_items.append(src.readframes(src.getnframes()))
 
     if audio_format is None:
         raise ValueError("No WAV segments were generated.")
@@ -198,7 +251,9 @@ def stitch_wav(segment_paths: list[Path], out_path: Path, silence_ms: int = 450)
         dest.setsampwidth(sample_width)
         dest.setframerate(frame_rate)
         dest.setcomptype(comp_type, comp_name)
-        for index, frame_data in enumerate(frames):
-            if index:
-                dest.writeframes(silence_frames)
-            dest.writeframes(frame_data)
+        for item in frame_items:
+            if isinstance(item, int):
+                silence_count = int(frame_rate * item / 1000)
+                dest.writeframes(b"\x00" * silence_count * channels * sample_width)
+            else:
+                dest.writeframes(item)

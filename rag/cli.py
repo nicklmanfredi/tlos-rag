@@ -29,7 +29,7 @@ def main() -> None:
     search.add_argument("query")
     search.add_argument("--host")
     search.add_argument("--limit", type=int, default=8)
-    search.add_argument("--search-backend", choices=["rag", "agentic", "text", "both"], default="rag")
+    search.add_argument("--search-backend", choices=["rag", "agentic", "text", "both"], default="agentic")
 
     chat = sub.add_parser("chat", help="Interactive chat REPL.")
     chat.add_argument("--host")
@@ -39,7 +39,7 @@ def main() -> None:
     chat.add_argument("--message-file", type=Path)
     chat.add_argument("--turns", type=int, default=4, help="Number of alternating host turns when using --both.")
     chat.add_argument("--turn-words", type=int, help="Approximate words per host turn when using --both.")
-    chat.add_argument("--search-backend", choices=["rag", "agentic", "text", "both"], default="rag")
+    chat.add_argument("--search-backend", choices=["rag", "agentic", "text", "both"], default="agentic")
 
     podcast = sub.add_parser("podcast", help="Generate a two-voice synthetic audio episode.")
     podcast.add_argument("--message")
@@ -49,7 +49,7 @@ def main() -> None:
     podcast.add_argument("--script-out", type=Path)
     podcast.add_argument("--turns", type=int, default=30)
     podcast.add_argument("--turn-words", type=int, default=95)
-    podcast.add_argument("--search-backend", choices=["rag", "agentic", "text"], default="rag")
+    podcast.add_argument("--search-backend", choices=["rag", "agentic", "text"], default="agentic")
 
     args = parser.parse_args()
     cfg = settings()

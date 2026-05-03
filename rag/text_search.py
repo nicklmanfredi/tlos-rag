@@ -12,18 +12,6 @@ from .parse_transcripts import parse_transcript
 from .retrieval import add_neighbors, reciprocal_rank_fusion
 
 
-AGENTIC_EXPANSIONS = {
-    "ai": ["creation providence image of god", "idolatry technology repentance", "wisdom passions discernment"],
-    "artificial": ["creation providence image of god", "idolatry technology repentance"],
-    "intelligence": ["wisdom knowledge image of god", "angelic beings powers"],
-    "extinction": ["death judgment eschatology", "apocalypse end of the world", "providence catastrophe"],
-    "risk": ["watchfulness vigilance discernment", "fear death repentance"],
-    "doom": ["apocalypse judgment death", "fear repentance hope"],
-    "technology": ["techne craft idolatry", "human making image of god"],
-    "p(doom)": ["apocalypse judgment fear", "death repentance eschatology"],
-}
-
-
 def retrieve_text(query: str, settings: Settings, host: str | None = None, final_k: int = 8) -> list[dict]:
     catalog = load_text_catalog(settings.transcripts_dir)
     host_filter = host_slug(host) if host else None
@@ -84,18 +72,20 @@ def plan_agentic_queries(query: str, max_queries: int = 8) -> list[str]:
     candidates: list[str] = [query]
     candidates.extend(extract_question_lines(query))
 
-    terms = sorted(content_terms(query))
+    phrases = extract_quoted_phrases(query)
+    candidates.extend(phrases)
+
+    terms = ordered_content_terms(query)
     if terms:
         candidates.append(" ".join(terms[:10]))
-    for keyword, expansions in AGENTIC_EXPANSIONS.items():
-        if keyword in query.lower():
-            candidates.extend(expansions)
 
     theme_terms = [term for term in terms if len(term) > 4]
-    for start in range(0, min(len(theme_terms), 12), 3):
-        group = theme_terms[start : start + 5]
+    for start in range(0, min(len(theme_terms), 18), 3):
+        group = theme_terms[start : start + 6]
         if len(group) >= 2:
             candidates.append(" ".join(group))
+
+    candidates.extend(term_windows(terms, width=3))
 
     planned: list[str] = []
     seen: set[str] = set()
@@ -118,6 +108,31 @@ def extract_question_lines(query: str) -> list[str]:
     if questions:
         return questions
     return [part.strip() for part in re.split(r"(?<=[?])\s+", query) if part.strip().endswith("?")]
+
+
+def extract_quoted_phrases(query: str) -> list[str]:
+    phrases: list[str] = []
+    for double_quoted, single_quoted in re.findall(r'"([^"]+)"|\'([^\']+)\'', query):
+        phrase = (double_quoted or single_quoted).strip()
+        if phrase:
+            phrases.append(phrase)
+    return phrases
+
+
+def ordered_content_terms(text: str) -> list[str]:
+    seen: set[str] = set()
+    terms: list[str] = []
+    for term in tokenize(text):
+        if term not in seen:
+            terms.append(term)
+            seen.add(term)
+    return terms
+
+
+def term_windows(terms: list[str], width: int) -> list[str]:
+    if width <= 1 or len(terms) < width:
+        return []
+    return [" ".join(terms[start : start + width]) for start in range(0, len(terms) - width + 1)]
 
 
 def normalize_query(query: str) -> str:
