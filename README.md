@@ -1,8 +1,15 @@
-# The Lord of Spirits RAG
+# The Lord of Spirits Transcript Chat
 
-CLI RAG system for searching and chatting with a locally built index of *The Lord of Spirits* podcast transcripts. It supports transcript-grounded persona chat inspired by the two hosts, Fr. Andrew Stephen Damick and Fr. Stephen De Young, either individually, together, or as a merged "show" voice.
+CLI system for searching, chatting with, and generating synthetic audio from a local corpus of *The Lord of Spirits* podcast transcripts. It supports transcript-grounded persona chat inspired by the two hosts, Fr. Andrew Stephen Damick and Fr. Stephen De Young, either individually, together, or as a merged "show" voice.
 
-The system ingests the scraped Ancient Faith transcript `.txt` files, parses speaker labels, chunks the conversations into rolling windows, stores local vectors in LanceDB, merges semantic search with BM25 keyword search, and sends cited Lord of Spirits transcript context to the configured LLM provider. It also supports a no-vector text-search backend for head-to-head comparison against the indexed RAG path.
+The system supports two retrieval paths:
+
+- `rag`: ingests scraped Ancient Faith transcript `.txt` files, parses speaker labels, chunks the conversations into rolling windows, stores local vectors in LanceDB, merges semantic search with BM25 keyword search, and sends cited Lord of Spirits transcript context to the configured LLM provider.
+- `agentic`: reads local transcript `.txt` files directly, plans several targeted transcript searches from the question, fuses the results, adds neighboring chunks for context, and sends the gathered evidence to the configured LLM provider.
+
+There is also a `text` backend, which is the direct one-pass BM25 baseline used to compare against the more deliberate `agentic` retrieval path.
+
+It can also turn a generated two-host transcript into a synthetic two-voice WAV podcast using generic OpenAI TTS voices. These are generic synthetic voices, not cloned or imitative host voices.
 
 The transcript files and vector index are local artifacts and are not committed to git.
 
@@ -106,6 +113,24 @@ Optional timestamps are supported at the start of a turn:
 
 The scraped Lord of Spirits transcripts do not contain source timestamps, so ingest estimates timestamps from word count. Citations from those files are marked as `estimated`.
 
+## Retrieval Modes
+
+Most commands accept:
+
+```bash
+--search-backend rag
+--search-backend agentic
+--search-backend text
+```
+
+For `search` and single-message `chat`, you can also compare both retrieval paths:
+
+```bash
+--search-backend both
+```
+
+`both` runs separate RAG and agentic searches. In chat mode, the second LLM answer is not given the first answer.
+
 ## Commands
 
 Build or refresh the index:
@@ -120,7 +145,19 @@ Search without calling Claude:
 python -m rag.cli search "divine council and angels" --host "Fr. Stephen De Young"
 ```
 
-Compare indexed RAG retrieval against direct text-file search:
+Search with the agentic backend:
+
+```bash
+python -m rag.cli search "divine council and angels" --search-backend agentic
+```
+
+Search with the one-pass text baseline:
+
+```bash
+python -m rag.cli search "divine council and angels" --search-backend text
+```
+
+Compare indexed RAG retrieval against agentic transcript search:
 
 ```bash
 python -m rag.cli search "divine council and angels" --search-backend both
@@ -169,12 +206,62 @@ Head-to-head chat comparison:
 python -m rag.cli chat --both --turns 4 --search-backend both --message "How do they talk about angels and worship?"
 ```
 
-`--search-backend both` runs two independent LLM calls: one with RAG context and one with direct text-search context. The second answer is not given the first answer.
+`--search-backend both` runs two independent LLM calls: one with RAG context and one with agentic transcript-search context. The second answer is not given the first answer.
 
 Codex-backed Lord of Spirits chat:
 
 ```bash
 python -m rag.cli chat --both --message "What do they say about the divine council?"
+```
+
+Generate a synthetic two-voice audio episode:
+
+```bash
+python -m rag.cli podcast \
+  --search-backend rag \
+  --turns 4 \
+  --message "What do they say about the divine council?" \
+  --out out/divine-council.wav
+```
+
+For longer prompts, read the message from a file:
+
+```bash
+python -m rag.cli podcast \
+  --search-backend agentic \
+  --turns 36 \
+  --turn-words 80 \
+  --message-file prompts/divine-council.txt \
+  --out out/divine-council.wav
+```
+
+For better control, generate and inspect the script first:
+
+```bash
+python -m rag.cli chat \
+  --both \
+  --search-backend agentic \
+  --turns 36 \
+  --turn-words 80 \
+  --message-file prompts/x-risk-prompt.txt > out/x-risk-agentic.txt
+```
+
+Then synthesize audio from the already-generated script without regenerating text:
+
+```bash
+python -m rag.cli podcast \
+  --script-file out/x-risk-agentic.txt \
+  --out out/x-risk-agentic.wav
+```
+
+This writes both the generated script and a stitched WAV file under `out/`, which is gitignored. The podcast command supports either retrieval backend with `--search-backend rag` or `--search-backend agentic`. It uses generic OpenAI TTS voices configured by `TTS_VOICE_ANDREW` and `TTS_VOICE_STEPHEN`; they are not cloned or imitative host voices.
+
+The repository includes one generated example:
+
+```bash
+prompts/x-risk-prompt.txt
+out/x-risk-agentic.txt
+out/x-risk-agentic.wav
 ```
 
 ## Smoke Test With Sample Transcript
@@ -205,5 +292,7 @@ python -m rag.cli chat --both --message "What is a temple doing in biblical symb
 
 - `personas/persona_*.md` are Lord of Spirits-specific, hand-editable, and loaded into the static persona prompt.
 - `data/` contains LanceDB, the chunk catalog, and embedding cache. It is gitignored.
+- `transcripts/` contains local raw transcript files for agentic/text search. It is gitignored.
+- `out/` contains generated podcast scripts and audio. It is gitignored.
 - The embedding cache makes repeated ingest runs resumable for unchanged chunks.
 - Host-filtered chat retrieves chunks where the selected host is the primary speaker, then includes nearby context for continuity.

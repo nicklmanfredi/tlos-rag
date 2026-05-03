@@ -11,6 +11,7 @@ from .chunking import format_time
 from .config import settings
 from .ingest import ingest_folder
 from .persona_bootstrap import bootstrap_persona
+from .podcast import generate_podcast, synthesize_podcast_from_script
 from .retrieval import retrieve
 
 
@@ -35,8 +36,20 @@ def main() -> None:
     chat.add_argument("--both", action="store_true", default=False)
     chat.add_argument("--show", action="store_true", default=False)
     chat.add_argument("--message")
+    chat.add_argument("--message-file", type=Path)
     chat.add_argument("--turns", type=int, default=4, help="Number of alternating host turns when using --both.")
+    chat.add_argument("--turn-words", type=int, help="Approximate words per host turn when using --both.")
     chat.add_argument("--search-backend", choices=["rag", "agentic", "text", "both"], default="rag")
+
+    podcast = sub.add_parser("podcast", help="Generate a two-voice synthetic audio episode.")
+    podcast.add_argument("--message")
+    podcast.add_argument("--message-file", type=Path)
+    podcast.add_argument("--script-file", type=Path, help="Synthesize audio from an existing Fr. Andrew/Fr. Stephen script.")
+    podcast.add_argument("--out", type=Path, default=Path("out/podcast.wav"))
+    podcast.add_argument("--script-out", type=Path)
+    podcast.add_argument("--turns", type=int, default=30)
+    podcast.add_argument("--turn-words", type=int, default=95)
+    podcast.add_argument("--search-backend", choices=["rag", "agentic", "text"], default="rag")
 
     args = parser.parse_args()
     cfg = settings()
@@ -53,18 +66,20 @@ def main() -> None:
             print_search_results(args.query, cfg, args.host, args.limit, backend)
     elif args.command == "chat":
         mode = "show" if args.show else "host" if args.host else "both"
-        if args.message:
+        message = read_message_arg(args)
+        if message:
             for backend in selected_backends(args.search_backend):
                 if args.search_backend == "both":
                     print(f"\n=== {backend.upper()} CHAT ===")
                 answer_once(
-                    args.message,
+                    message,
                     cfg,
                     mode=mode,
                     host=args.host,
                     stream=True,
                     turns=args.turns,
                     search_backend=backend,
+                    turn_words=args.turn_words,
                 )
             return
         if args.search_backend == "both":
@@ -79,7 +94,40 @@ def main() -> None:
             if not message:
                 continue
             print()
-            answer_once(message, cfg, mode=mode, host=args.host, stream=True, turns=args.turns, search_backend=args.search_backend)
+            answer_once(
+                message,
+                cfg,
+                mode=mode,
+                host=args.host,
+                stream=True,
+                turns=args.turns,
+                search_backend=args.search_backend,
+                turn_words=args.turn_words,
+            )
+    elif args.command == "podcast":
+        if args.script_file and (args.message or args.message_file or args.script_out):
+            raise SystemExit("Use --script-file by itself with --out; do not combine it with --message, --message-file, or --script-out.")
+        if args.script_file:
+            result = synthesize_podcast_from_script(args.script_file, cfg, out_path=args.out)
+            print(f"Wrote {result.out_path}")
+            print(f"Read {result.script_path}")
+            print(f"Synthesized {result.segments} voice segments")
+            return
+        message = read_message_arg(args)
+        if not message:
+            raise SystemExit("podcast requires --message, --message-file, or --script-file")
+        result = generate_podcast(
+            message,
+            cfg,
+            out_path=args.out,
+            script_path=args.script_out,
+            turns=args.turns,
+            search_backend=args.search_backend,
+            turn_words=args.turn_words,
+        )
+        print(f"Wrote {result.out_path}")
+        print(f"Wrote {result.script_path}")
+        print(f"Synthesized {result.segments} voice segments")
 
 
 def selected_backends(value: str) -> list[str]:
@@ -92,6 +140,16 @@ def print_search_results(query: str, cfg, host: str | None, limit: int, backend:
         print(f"[{i}] {row['episode_title']} {format_time(row['start_seconds'])}-{format_time(row['end_seconds'])}{approx}")
         print(f"    primary={row['primary_speaker']} speakers={','.join(row.get('speakers', []))}")
         print(f"    {row['text'][:700].replace(chr(10), ' ')}")
+
+
+def read_message_arg(args) -> str | None:
+    message = getattr(args, "message", None)
+    message_file = getattr(args, "message_file", None)
+    if message and message_file:
+        raise SystemExit("Use only one of --message or --message-file")
+    if message_file:
+        return message_file.expanduser().read_text(encoding="utf-8").strip()
+    return message
 
 
 def read_repl_line(prompt: str) -> str | None:

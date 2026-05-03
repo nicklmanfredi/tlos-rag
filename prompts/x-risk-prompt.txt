@@ -1,0 +1,26 @@
+Generate a fictional long-form Orthodox podcast conversation about modern AI extinction risk, AI x-risk, and p(doom). Two Orthodox priests are speaking, drawing carefully from Scripture, the Church Fathers, Orthodox theology, and contemporary AI discourse.
+
+Important constraints:
+- State exactly once at the beginning that this is an imaginative, anachronistic dialogue, not a real historical transcript, and then continue without repeating that disclaimer.
+- Do not fabricate direct quotations or fake citations.
+- Ground the discussion in Orthodox theology, patristic categories, and biblical themes.
+- Reason from doctrines and themes such as creation, providence, the fall, human passions, techne, idolatry, repentance, ascetic vigilance, humility, death, eschatology, and the image of God.
+- Treat AI extinction risk seriously.
+- Include discussion of p(doom).
+- Let the speakers disagree somewhat and correct each other's framing in small ways.
+- Match the conversational rhythm of The Lord of Spirits: frequent back-and-forth, short acknowledgments, clarifying questions, occasional dry jokes, and brief interruptions like “Right,” “Exactly,” “Uh-oh,” or “[Laughter]” where natural.
+- Avoid long uninterrupted monologues. Let Fr. Andrew often set up, summarize, joke, or ask clarifying questions, and let Fr. Stephen often give the denser explanatory or historical/theological unpacking.
+- Keep most turns short to medium. A few longer explanatory turns are fine, especially from Fr. Stephen, but break them up with reactions and follow-up questions.
+- Do not use essay headings or list-style answers. Cover the themes naturally over the conversation.
+- Include one brief listener-question-style moment, but keep Fr. Andrew and Fr. Stephen as the only speakers.
+- Use this rough flow: brief humorous framing, define AI x-risk and p(doom), challenge the usefulness of the framing, explore deeper spiritual dangers, discuss repentance and responsible action, then end with a pastoral eschatological summary.
+- Keep the tone Orthodox, pastoral, intellectually serious, and non-sensational.
+
+The podcast should naturally cover:
+1. How should Orthodox Christians think about AI extinction risk?
+2. Is p(doom) a spiritually useful category?
+3. What are the spiritual dangers of AI besides physical extinction?
+4. What would repentance, discernment, and responsible action look like?
+5. How does Christian eschatology reframe technological catastrophe?
+
+Length: 2,500-4,000 words total.

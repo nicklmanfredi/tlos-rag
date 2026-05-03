@@ -73,11 +73,12 @@ def answer_once(
     stream: bool = True,
     turns: int = 4,
     search_backend: str = "rag",
+    turn_words: int | None = None,
 ) -> str:
     chunks = retrieve(message, settings, host=host if mode == "host" else None, search_backend=search_backend)
 
     if mode == "both":
-        return answer_both_turns(message, settings, chunks, turns=turns, stream=stream)
+        return answer_both_turns(message, settings, chunks, turns=turns, stream=stream, turn_words=turn_words)
 
     static_prompt = build_static_prompt(settings, mode, host)
     user_text = f"{format_excerpts(chunks)}\n\n<user_message>\n{message}\n</user_message>"
@@ -93,7 +94,14 @@ def answer_once(
     return answer_with_provider(static_prompt, user_text, settings, stream=stream)
 
 
-def answer_both_turns(message: str, settings: Settings, chunks: list[dict], turns: int, stream: bool = True) -> str:
+def answer_both_turns(
+    message: str,
+    settings: Settings,
+    chunks: list[dict],
+    turns: int,
+    stream: bool = True,
+    turn_words: int | None = None,
+) -> str:
     turn_count = max(1, turns)
     host_order = tuple(HOSTS)
     transcript_turns: list[tuple[str, str]] = []
@@ -114,6 +122,7 @@ def answer_both_turns(message: str, settings: Settings, chunks: list[dict], turn
 
     for index in range(turn_count):
         slug = host_order[index % len(host_order)]
+        target_words = turn_word_target(slug, turn_words)
         static_prompt = build_turn_prompt(settings, slug)
         user_text = build_turn_user_text(
             context=context,
@@ -121,6 +130,7 @@ def answer_both_turns(message: str, settings: Settings, chunks: list[dict], turn
             transcript_turns=transcript_turns,
             speaker_slug=slug,
             is_final_turn=index == turn_count - 1,
+            turn_words=target_words,
         )
         text = answer_with_provider(static_prompt, user_text, settings, stream=False)
         text = strip_speaker_label(text, slug).strip()
@@ -149,6 +159,7 @@ def build_turn_user_text(
     transcript_turns: list[tuple[str, str]],
     speaker_slug: str,
     is_final_turn: bool,
+    turn_words: int | None = None,
 ) -> str:
     conversation = format_turn_transcript(transcript_turns) if transcript_turns else "(no host turns yet)"
     finish_instruction = (
@@ -156,14 +167,30 @@ def build_turn_user_text(
         if is_final_turn
         else "Leave room for the other host to continue the exchange."
     )
+    length_instruction = (
+        f"Keep this turn around {turn_words} words, with a natural podcast cadence and one focused point."
+        if turn_words
+        else "Keep this turn concise enough to feel like a real back-and-forth podcast exchange."
+    )
     return (
         f"{context}\n\n"
         f"<user_message>\n{original_message}\n</user_message>\n\n"
         f"<conversation_so_far>\n{conversation}\n</conversation_so_far>\n\n"
         f"Write the next transcript turn as {host_display(speaker_slug)}. "
         "Answer the user's question through the conversation rather than meta-commenting on the format. "
+        f"{length_instruction} "
         f"{finish_instruction}"
     )
+
+
+def turn_word_target(speaker_slug: str, requested_words: int | None) -> int | None:
+    if requested_words is None:
+        return None
+    if "andrew" in speaker_slug:
+        return max(20, int(requested_words * 0.65))
+    if "stephen" in speaker_slug:
+        return max(30, int(requested_words * 1.25))
+    return requested_words
 
 
 def format_turn_transcript(turns: list[tuple[str, str]]) -> str:

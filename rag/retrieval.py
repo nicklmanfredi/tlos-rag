@@ -21,7 +21,11 @@ def retrieve(
     final_k: int = 8,
     search_backend: str = "rag",
 ) -> list[dict]:
-    if search_backend in {"agentic", "text"}:
+    if search_backend == "agentic":
+        from .text_search import retrieve_agentic
+
+        return retrieve_agentic(query, settings, host=host, final_k=final_k)
+    if search_backend == "text":
         from .text_search import retrieve_text
 
         return retrieve_text(query, settings, host=host, final_k=final_k)
