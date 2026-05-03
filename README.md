@@ -4,10 +4,10 @@ CLI system for searching, chatting with, and generating synthetic audio from a l
 
 The system supports two retrieval paths:
 
-- `rag`: ingests scraped Ancient Faith transcript `.txt` files, parses speaker labels, chunks the conversations into rolling windows, stores local vectors in LanceDB, merges semantic search with BM25 keyword search, and sends cited Lord of Spirits transcript context to the configured LLM provider.
-- `agentic`: reads local transcript `.txt` files directly, plans several targeted transcript searches from the question, fuses the results, adds neighboring chunks for context, and sends the gathered evidence to the configured LLM provider.
+- `rag`: ingests scraped Ancient Faith transcript `.txt` files, parses speaker labels, chunks the conversations into rolling windows, stores local vectors in LanceDB, merges semantic search with BM25 keyword search, expands around neighboring chunks, reranks the context, and sends cited Lord of Spirits transcript evidence to the configured LLM provider.
+- `agentic`: decomposes the question into topic-neutral search variants, runs them through the indexed RAG retriever, adds corpus-derived expansion queries from the first retrieved evidence, fuses the results, adds neighboring chunks for continuity, reranks the gathered evidence, and sends the evidence through a private synthesis step before the final answer.
 
-There is also a `text` backend, which is the direct one-pass BM25 baseline used to compare against the more deliberate `agentic` retrieval path.
+There is also a `text` backend, which reads local transcript `.txt` files directly and runs one-pass BM25 as a baseline.
 
 It can also turn a generated two-host transcript into a synthetic two-voice WAV podcast using generic OpenAI TTS voices. These are generic synthetic voices, not cloned or imitative host voices.
 
@@ -123,13 +123,15 @@ Most commands accept:
 --search-backend text
 ```
 
+The default is `agentic`, because it now uses hybrid query planning over the indexed RAG store.
+
 For `search` and single-message `chat`, you can also compare both retrieval paths:
 
 ```bash
 --search-backend both
 ```
 
-`both` runs separate RAG and agentic searches. In chat mode, the second LLM answer is not given the first answer.
+`both` runs separate RAG and hybrid agentic searches. In chat mode, the second LLM answer is not given the first answer.
 
 ## Commands
 
@@ -145,7 +147,7 @@ Search without calling Claude:
 python -m rag.cli search "divine council and angels" --host "Fr. Stephen De Young"
 ```
 
-Search with the agentic backend:
+Search with the hybrid agentic backend:
 
 ```bash
 python -m rag.cli search "divine council and angels" --search-backend agentic
@@ -206,7 +208,7 @@ Head-to-head chat comparison:
 python -m rag.cli chat --both --turns 4 --search-backend both --message "How do they talk about angels and worship?"
 ```
 
-`--search-backend both` runs two independent LLM calls: one with RAG context and one with agentic transcript-search context. The second answer is not given the first answer.
+`--search-backend both` runs two independent LLM calls: one with standard RAG context and one with hybrid agentic RAG context. The second answer is not given the first answer.
 
 Codex-backed Lord of Spirits chat:
 
