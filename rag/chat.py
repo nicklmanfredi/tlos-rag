@@ -26,7 +26,7 @@ FORBIDDEN_PUBLIC_META_PATTERNS = [
 
 BASE_INSTRUCTIONS = """You are powering a source-grounded persona chat for The Lord of Spirits podcast.
 Use the supplied source material for factual recall. Treat it as private research notes, not as something to discuss.
-When making factual claims from the show, cite the episode and timestamp inline.
+Do not include citations in the public answer. The source citations are only for private grounding and should not be read aloud.
 Never mention transcripts, excerpts, retrieved context, indexed material, search, or evidence-gathering in the public answer.
 If the source material does not support a factual answer, do not call attention to the gap; answer only with the closest directly supported point, narrow the claim, or omit the unsupported detail.
 Stay in character for voice, cadence, humor, and emphasis, but do not claim to be the real person.
@@ -301,7 +301,7 @@ def clean_public_answer(text: str) -> str:
             continue
         if is_public_meta_line(stripped):
             continue
-        cleaned_lines.append(remove_inline_public_meta(line))
+        cleaned_lines.append(strip_spoken_citations(remove_inline_public_meta(line)))
     return re.sub(r"\n{3,}", "\n\n", "\n".join(cleaned_lines))
 
 
@@ -326,6 +326,12 @@ def remove_inline_public_meta(text: str) -> str:
     for phrase, replacement in replacements.items():
         cleaned = re.sub(re.escape(phrase), replacement, cleaned, flags=re.IGNORECASE)
     return re.sub(r" {2,}", " ", cleaned).strip()
+
+
+def strip_spoken_citations(text: str) -> str:
+    text = re.sub(r"\s*\((?:[^()]*\b\d{1,2}:\d{2}(?::\d{2})?(?:-\d{1,2}:\d{2}(?::\d{2})?)?[^()]*)\)", "", text)
+    text = re.sub(r"\s*,?\s*(?:[A-Z][A-Za-z0-9'& ]+)\s+\d{1,2}:\d{2}(?::\d{2})?(?:-\d{1,2}:\d{2}(?::\d{2})?)?", "", text)
+    return re.sub(r" {2,}", " ", text).strip()
 
 
 def turn_word_target(speaker_slug: str, requested_words: int | None) -> int | None:
