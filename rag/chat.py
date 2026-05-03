@@ -72,8 +72,9 @@ def answer_once(
     host: str | None = None,
     stream: bool = True,
     turns: int = 4,
+    search_backend: str = "rag",
 ) -> str:
-    chunks = retrieve(message, settings, host=host if mode == "host" else None)
+    chunks = retrieve(message, settings, host=host if mode == "host" else None, search_backend=search_backend)
 
     if mode == "both":
         return answer_both_turns(message, settings, chunks, turns=turns, stream=stream)

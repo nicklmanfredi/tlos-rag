@@ -71,6 +71,7 @@ def host_display(slug: str) -> str:
 @dataclass(frozen=True)
 class Settings:
     data_dir: Path
+    transcripts_dir: Path
     lancedb_dir: Path
     table_name: str
     chunk_catalog: Path
@@ -94,6 +95,7 @@ def settings() -> Settings:
     data_dir = Path(os.getenv("RAG_DATA_DIR", root / "data")).expanduser()
     return Settings(
         data_dir=data_dir,
+        transcripts_dir=Path(os.getenv("TRANSCRIPTS_DIR", root / "transcripts" / "lordofspirits")).expanduser(),
         lancedb_dir=Path(os.getenv("LANCEDB_DIR", data_dir / "lancedb")).expanduser(),
         table_name=os.getenv("LANCEDB_TABLE", "transcript_chunks"),
         chunk_catalog=Path(os.getenv("CHUNK_CATALOG", data_dir / "chunks.jsonl")).expanduser(),
