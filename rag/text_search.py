@@ -9,7 +9,19 @@ from .chunking import chunk_turns
 from .config import Settings, host_slug
 from .embeddings import STOPWORDS, content_terms
 from .parse_transcripts import parse_transcript
-from .retrieval import add_neighbors
+from .retrieval import add_neighbors, reciprocal_rank_fusion
+
+
+AGENTIC_EXPANSIONS = {
+    "ai": ["creation providence image of god", "idolatry technology repentance", "wisdom passions discernment"],
+    "artificial": ["creation providence image of god", "idolatry technology repentance"],
+    "intelligence": ["wisdom knowledge image of god", "angelic beings powers"],
+    "extinction": ["death judgment eschatology", "apocalypse end of the world", "providence catastrophe"],
+    "risk": ["watchfulness vigilance discernment", "fear death repentance"],
+    "doom": ["apocalypse judgment death", "fear repentance hope"],
+    "technology": ["techne craft idolatry", "human making image of god"],
+    "p(doom)": ["apocalypse judgment fear", "death repentance eschatology"],
+}
 
 
 def retrieve_text(query: str, settings: Settings, host: str | None = None, final_k: int = 8) -> list[dict]:
@@ -22,6 +34,21 @@ def retrieve_text(query: str, settings: Settings, host: str | None = None, final
     ranked = bm25_text_search(query, searchable, limit=max(final_k * 3, 24))
     if host_filter:
         ranked = add_neighbors(ranked, catalog, final_k)
+    return ranked[:final_k]
+
+
+def retrieve_agentic(query: str, settings: Settings, host: str | None = None, final_k: int = 8) -> list[dict]:
+    catalog = load_text_catalog(settings.transcripts_dir)
+    host_filter = host_slug(host) if host else None
+    searchable = [row for row in catalog if row["primary_speaker"] == host_filter] if host_filter else catalog
+    if not searchable:
+        return []
+
+    planned_queries = plan_agentic_queries(query)
+    rankings = [bm25_text_search(planned_query, searchable, limit=max(final_k * 3, 16)) for planned_query in planned_queries]
+    fused = reciprocal_rank_fusion(rankings)
+    with_neighbors = add_neighbors(fused, catalog, max(final_k * 2, final_k + 4))
+    ranked = rank_agentic_evidence(query, planned_queries, with_neighbors)
     return ranked[:final_k]
 
 
@@ -51,6 +78,68 @@ def bm25_text_search(query: str, rows: list[dict], limit: int) -> list[dict]:
         item["text_search_score"] = float(score) + overlap + title_bonus
         ranked.append(item)
     return sorted(ranked, key=lambda row: row["text_search_score"], reverse=True)[:limit]
+
+
+def plan_agentic_queries(query: str, max_queries: int = 8) -> list[str]:
+    candidates: list[str] = [query]
+    candidates.extend(extract_question_lines(query))
+
+    terms = sorted(content_terms(query))
+    if terms:
+        candidates.append(" ".join(terms[:10]))
+    for keyword, expansions in AGENTIC_EXPANSIONS.items():
+        if keyword in query.lower():
+            candidates.extend(expansions)
+
+    theme_terms = [term for term in terms if len(term) > 4]
+    for start in range(0, min(len(theme_terms), 12), 3):
+        group = theme_terms[start : start + 5]
+        if len(group) >= 2:
+            candidates.append(" ".join(group))
+
+    planned: list[str] = []
+    seen: set[str] = set()
+    for candidate in candidates:
+        normalized = normalize_query(candidate)
+        if normalized and normalized not in seen:
+            planned.append(normalized)
+            seen.add(normalized)
+        if len(planned) >= max_queries:
+            break
+    return planned or [query]
+
+
+def extract_question_lines(query: str) -> list[str]:
+    questions = []
+    for line in query.splitlines():
+        line = re.sub(r"^\s*\d+\.\s*", "", line).strip()
+        if line.endswith("?"):
+            questions.append(line)
+    if questions:
+        return questions
+    return [part.strip() for part in re.split(r"(?<=[?])\s+", query) if part.strip().endswith("?")]
+
+
+def normalize_query(query: str) -> str:
+    tokens = tokenize(query)
+    return " ".join(tokens)
+
+
+def rank_agentic_evidence(original_query: str, planned_queries: list[str], rows: list[dict]) -> list[dict]:
+    original_terms = content_terms(original_query)
+    planned_terms = content_terms(" ".join(planned_queries))
+    scored = []
+    for row in rows:
+        text = f'{row.get("episode_title", "")} {row["text"]}'.lower()
+        text_terms = content_terms(text)
+        original_overlap = len(original_terms & text_terms) / max(1, len(original_terms))
+        planned_overlap = len(planned_terms & text_terms) / max(1, len(planned_terms))
+        score = float(row.get("rrf_score", 0.0)) + original_overlap + (0.5 * planned_overlap)
+        item = dict(row)
+        item["agentic_score"] = score
+        item["agentic_queries"] = planned_queries
+        scored.append((score, item))
+    return [item for _, item in sorted(scored, key=lambda pair: pair[0], reverse=True)]
 
 
 def tokenize(text: str) -> list[str]:

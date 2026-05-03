@@ -88,6 +88,9 @@ class Settings:
     codex_model: str | None
     codex_oss: bool
     codex_local_provider: str | None
+    tts_model: str
+    tts_voice_andrew: str
+    tts_voice_stephen: str
 
 
 def settings() -> Settings:
@@ -112,4 +115,7 @@ def settings() -> Settings:
         codex_model=os.getenv("CODEX_MODEL") or None,
         codex_oss=os.getenv("CODEX_OSS", "").lower() in {"1", "true", "yes"},
         codex_local_provider=os.getenv("CODEX_LOCAL_PROVIDER") or None,
+        tts_model=os.getenv("OPENAI_TTS_MODEL", "gpt-4o-mini-tts"),
+        tts_voice_andrew=os.getenv("TTS_VOICE_ANDREW", "ash"),
+        tts_voice_stephen=os.getenv("TTS_VOICE_STEPHEN", "echo"),
     )

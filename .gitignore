@@ -6,4 +6,7 @@ __pycache__/
 data/*
 !data/.gitkeep
 transcripts/
+out/*
+!out/x-risk-agentic.txt
+!out/x-risk-agentic.wav
 *.lance
