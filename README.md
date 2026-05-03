@@ -2,7 +2,7 @@
 
 CLI RAG system for searching and chatting with a locally built index of *The Lord of Spirits* podcast transcripts. It supports transcript-grounded persona chat inspired by the two hosts, Fr. Andrew Stephen Damick and Fr. Stephen De Young, either individually, together, or as a merged "show" voice.
 
-The system ingests the scraped Ancient Faith transcript `.txt` files, parses speaker labels, chunks the conversations into rolling windows, stores local vectors in LanceDB, merges semantic search with BM25 keyword search, and sends cited Lord of Spirits transcript context to the configured LLM provider. On this machine it is currently set up to use the local `codex` CLI for chat, with local keyword retrieval/reranking for no-key operation.
+The system ingests the scraped Ancient Faith transcript `.txt` files, parses speaker labels, chunks the conversations into rolling windows, stores local vectors in LanceDB, merges semantic search with BM25 keyword search, and sends cited Lord of Spirits transcript context to the configured LLM provider. It also supports a no-vector text-search backend for head-to-head comparison against the indexed RAG path.
 
 The transcript files and vector index are local artifacts and are not committed to git.
 
@@ -71,7 +71,7 @@ CHAT_PROVIDER=mock
 
 ## Transcript Corpus
 
-The repo does not commit the real transcript `.txt` files or generated LanceDB index. To fetch available transcripts from Ancient Faith:
+The repo does not commit the real transcript `.txt` files or generated LanceDB index. Keep local transcripts under the ignored `transcripts/lordofspirits/` directory:
 
 ```bash
 python scripts/fetch_lord_of_spirits_transcripts.py --out transcripts/lordofspirits
@@ -80,13 +80,13 @@ python -m rag.cli ingest transcripts/lordofspirits
 
 The scraper scans the 28 podcast index pages, visits each episode page, extracts pages with a `#transcript-reader` block, and writes files as `<episode-slug>.txt`. Episodes without transcripts are skipped.
 
-The real transcript corpus used during development lived at:
+The text-search backend reads from `TRANSCRIPTS_DIR`, defaulting to:
 
 ```bash
-/Users/nick/tmp/tlos
+transcripts/lordofspirits
 ```
 
-It contains scraped `.txt` transcripts from the Ancient Faith *Lord of Spirits* podcast pages. The indexed files use speaker labels like `Fr. Andrew:`, `Fr. Stephen:`, callers, and occasional full-name labels.
+On this machine, the original scraped transcript corpus also exists at `/Users/nick/tmp/tlos`. It contains scraped `.txt` transcripts from the Ancient Faith *Lord of Spirits* podcast pages. The indexed files use speaker labels like `Fr. Andrew:`, `Fr. Stephen:`, callers, and occasional full-name labels.
 
 ## Transcript Format
 
@@ -118,6 +118,12 @@ Search without calling Claude:
 
 ```bash
 python -m rag.cli search "divine council and angels" --host "Fr. Stephen De Young"
+```
+
+Compare indexed RAG retrieval against direct text-file search:
+
+```bash
+python -m rag.cli search "divine council and angels" --search-backend both
 ```
 
 Persona guides live in:
@@ -156,6 +162,14 @@ Single-message mode:
 ```bash
 python -m rag.cli chat --both --turns 4 --message "How do they talk about angels and worship?"
 ```
+
+Head-to-head chat comparison:
+
+```bash
+python -m rag.cli chat --both --turns 4 --search-backend both --message "How do they talk about angels and worship?"
+```
+
+`--search-backend both` runs two independent LLM calls: one with RAG context and one with direct text-search context. The second answer is not given the first answer.
 
 Codex-backed Lord of Spirits chat:
 

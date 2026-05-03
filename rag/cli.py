@@ -28,6 +28,7 @@ def main() -> None:
     search.add_argument("query")
     search.add_argument("--host")
     search.add_argument("--limit", type=int, default=8)
+    search.add_argument("--search-backend", choices=["rag", "agentic", "text", "both"], default="rag")
 
     chat = sub.add_parser("chat", help="Interactive chat REPL.")
     chat.add_argument("--host")
@@ -35,6 +36,7 @@ def main() -> None:
     chat.add_argument("--show", action="store_true", default=False)
     chat.add_argument("--message")
     chat.add_argument("--turns", type=int, default=4, help="Number of alternating host turns when using --both.")
+    chat.add_argument("--search-backend", choices=["rag", "agentic", "text", "both"], default="rag")
 
     args = parser.parse_args()
     cfg = settings()
@@ -45,16 +47,28 @@ def main() -> None:
     elif args.command == "bootstrap-persona":
         print(bootstrap_persona(args.host, cfg))
     elif args.command == "search":
-        for i, row in enumerate(retrieve(args.query, cfg, host=args.host, final_k=args.limit), start=1):
-            approx = " estimated" if row.get("timestamp_source") == "estimated" else ""
-            print(f"[{i}] {row['episode_title']} {format_time(row['start_seconds'])}-{format_time(row['end_seconds'])}{approx}")
-            print(f"    primary={row['primary_speaker']} speakers={','.join(row.get('speakers', []))}")
-            print(f"    {row['text'][:700].replace(chr(10), ' ')}")
+        for backend in selected_backends(args.search_backend):
+            if args.search_backend == "both":
+                print(f"\n=== {backend.upper()} SEARCH ===")
+            print_search_results(args.query, cfg, args.host, args.limit, backend)
     elif args.command == "chat":
         mode = "show" if args.show else "host" if args.host else "both"
         if args.message:
-            answer_once(args.message, cfg, mode=mode, host=args.host, stream=True, turns=args.turns)
+            for backend in selected_backends(args.search_backend):
+                if args.search_backend == "both":
+                    print(f"\n=== {backend.upper()} CHAT ===")
+                answer_once(
+                    args.message,
+                    cfg,
+                    mode=mode,
+                    host=args.host,
+                    stream=True,
+                    turns=args.turns,
+                    search_backend=backend,
+                )
             return
+        if args.search_backend == "both":
+            raise SystemExit("--search-backend both is only supported with --message; use rag or text for the REPL.")
         print("Press Esc to exit.")
         while True:
             message = read_repl_line("\nYou: ")
@@ -65,7 +79,19 @@ def main() -> None:
             if not message:
                 continue
             print()
-            answer_once(message, cfg, mode=mode, host=args.host, stream=True, turns=args.turns)
+            answer_once(message, cfg, mode=mode, host=args.host, stream=True, turns=args.turns, search_backend=args.search_backend)
+
+
+def selected_backends(value: str) -> list[str]:
+    return ["rag", "agentic"] if value == "both" else [value]
+
+
+def print_search_results(query: str, cfg, host: str | None, limit: int, backend: str) -> None:
+    for i, row in enumerate(retrieve(query, cfg, host=host, final_k=limit, search_backend=backend), start=1):
+        approx = " estimated" if row.get("timestamp_source") == "estimated" else ""
+        print(f"[{i}] {row['episode_title']} {format_time(row['start_seconds'])}-{format_time(row['end_seconds'])}{approx}")
+        print(f"    primary={row['primary_speaker']} speakers={','.join(row.get('speakers', []))}")
+        print(f"    {row['text'][:700].replace(chr(10), ' ')}")
 
 
 def read_repl_line(prompt: str) -> str | None:

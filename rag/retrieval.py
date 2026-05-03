@@ -14,7 +14,20 @@ def tokenize(text: str) -> list[str]:
     return [term for term in re.findall(r"[a-z0-9']+", text.lower()) if term not in STOPWORDS and len(term) > 2]
 
 
-def retrieve(query: str, settings: Settings, host: str | None = None, final_k: int = 8) -> list[dict]:
+def retrieve(
+    query: str,
+    settings: Settings,
+    host: str | None = None,
+    final_k: int = 8,
+    search_backend: str = "rag",
+) -> list[dict]:
+    if search_backend in {"agentic", "text"}:
+        from .text_search import retrieve_text
+
+        return retrieve_text(query, settings, host=host, final_k=final_k)
+    if search_backend != "rag":
+        raise ValueError(f"Unsupported search_backend={search_backend}")
+
     host_filter = host_slug(host) if host else None
     catalog = load_catalog(settings)
     if host_filter:
