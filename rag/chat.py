@@ -11,6 +11,7 @@ from .retrieval import retrieve
 
 
 CHAT_RETRIEVAL_K = 12
+MAX_EMPTY_TURN_RETRIES = 2
 
 FORBIDDEN_PUBLIC_META_PATTERNS = [
     re.compile(pattern, re.IGNORECASE)
@@ -157,7 +158,9 @@ def answer_both_turns(
 
     briefing = synthesize_evidence_brief(message, settings, context)
 
-    for index in range(turn_count):
+    index = 0
+    attempts = 0
+    while len(transcript_turns) < turn_count and attempts < turn_count + (turn_count * MAX_EMPTY_TURN_RETRIES):
         slug = host_order[index % len(host_order)]
         target_words = turn_word_target(slug, turn_words)
         static_prompt = build_turn_prompt(settings, slug)
@@ -167,14 +170,21 @@ def answer_both_turns(
             original_message=message,
             transcript_turns=transcript_turns,
             speaker_slug=slug,
-            is_final_turn=index == turn_count - 1,
+            is_final_turn=len(transcript_turns) == turn_count - 1,
             turn_words=target_words,
         )
+        attempts += 1
         text = answer_public_with_provider(static_prompt, user_text, settings, stream=False)
         text = strip_speaker_label(text, slug).strip()
+        if not text:
+            continue
         transcript_turns.append((slug, text))
+        index += 1
         if stream:
             print(f"{TURN_LABELS.get(slug, host_display(slug))}: {text}\n")
+
+    if len(transcript_turns) < turn_count:
+        raise RuntimeError(f"Generated only {len(transcript_turns)} non-empty turns out of requested {turn_count}.")
 
     return format_turn_transcript(transcript_turns)
 
@@ -204,6 +214,13 @@ def build_turn_user_text(
     turn_words: int | None = None,
 ) -> str:
     conversation = format_turn_transcript(transcript_turns) if transcript_turns else "(no host turns yet)"
+    opening_instruction = (
+        "This is the opening turn. Start cleanly for the listener: name the topic, frame the user's question, "
+        "and set up the conversation. Do not begin with agreement words like 'Right,' 'Yeah,' or 'Exactly,' "
+        "because nothing has been said yet."
+        if not transcript_turns
+        else "Respond naturally to the conversation so far."
+    )
     finish_instruction = (
         "This is the final planned turn, so bring the answer to a natural stopping point."
         if is_final_turn
@@ -220,6 +237,7 @@ def build_turn_user_text(
         f"<user_message>\n{original_message}\n</user_message>\n\n"
         f"<conversation_so_far>\n{conversation}\n</conversation_so_far>\n\n"
         f"Write the next podcast turn as {host_display(speaker_slug)}. "
+        f"{opening_instruction} "
         "Answer the user's question through the conversation rather than meta-commenting on the format. "
         "Advance the argument from the private briefing in your own words. "
         "Do not mention transcripts, excerpts, search, retrieval, source material, or whether something could be found. "
