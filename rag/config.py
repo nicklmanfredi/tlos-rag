@@ -88,9 +88,14 @@ class Settings:
     codex_model: str | None
     codex_oss: bool
     codex_local_provider: str | None
+    tts_provider: str
     tts_model: str
     tts_voice_andrew: str
     tts_voice_stephen: str
+    elevenlabs_tts_model: str
+    elevenlabs_voice_andrew: str | None
+    elevenlabs_voice_stephen: str | None
+    tts_master_audio: bool
 
 
 def settings() -> Settings:
@@ -115,7 +120,12 @@ def settings() -> Settings:
         codex_model=os.getenv("CODEX_MODEL") or None,
         codex_oss=os.getenv("CODEX_OSS", "").lower() in {"1", "true", "yes"},
         codex_local_provider=os.getenv("CODEX_LOCAL_PROVIDER") or None,
+        tts_provider=os.getenv("TTS_PROVIDER", "openai").lower(),
         tts_model=os.getenv("OPENAI_TTS_MODEL", "gpt-4o-mini-tts"),
-        tts_voice_andrew=os.getenv("TTS_VOICE_ANDREW", "ash"),
-        tts_voice_stephen=os.getenv("TTS_VOICE_STEPHEN", "echo"),
+        tts_voice_andrew=os.getenv("TTS_VOICE_ANDREW", "marin"),
+        tts_voice_stephen=os.getenv("TTS_VOICE_STEPHEN", "cedar"),
+        elevenlabs_tts_model=os.getenv("ELEVENLABS_TTS_MODEL", "eleven_v3"),
+        elevenlabs_voice_andrew=os.getenv("ELEVENLABS_VOICE_ANDREW") or None,
+        elevenlabs_voice_stephen=os.getenv("ELEVENLABS_VOICE_STEPHEN") or None,
+        tts_master_audio=os.getenv("TTS_MASTER_AUDIO", "1").lower() not in {"0", "false", "no"},
     )

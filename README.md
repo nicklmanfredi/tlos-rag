@@ -9,7 +9,7 @@ The system supports two retrieval paths:
 
 There is also a `text` backend, which reads local transcript `.txt` files directly and runs one-pass BM25 as a baseline.
 
-It can also turn a generated two-host transcript into a synthetic two-voice WAV podcast using generic OpenAI TTS voices. These are generic synthetic voices, not cloned or imitative host voices.
+It can also turn a generated two-host transcript into a synthetic two-voice WAV podcast using generic OpenAI TTS voices or ElevenLabs voice IDs. These are generic synthetic voices, not cloned or imitative host voices.
 
 The transcript files and vector index are local artifacts and are not committed to git.
 
@@ -86,6 +86,30 @@ python -m rag.cli ingest transcripts/lordofspirits
 ```
 
 The scraper scans the 28 podcast index pages, visits each episode page, extracts pages with a `#transcript-reader` block, and writes files as `<episode-slug>.txt`. Episodes without transcripts are skipped.
+
+Episodes without official transcripts can be backfilled from the episode audio. First discover the missing set:
+
+```bash
+python scripts/backfill_lord_of_spirits_audio_transcripts.py
+```
+
+This writes `data/missing_lordofspirits_episodes.jsonl` and does not download or transcribe by default. To download and transcribe a small test batch:
+
+```bash
+python scripts/backfill_lord_of_spirits_audio_transcripts.py --limit 1 --download --transcribe
+```
+
+The backfill script uses `ffmpeg` to split long MP3s into upload-sized chunks and OpenAI speech-to-text by default:
+
+```bash
+OPENAI_TRANSCRIPTION_MODEL=gpt-4o-transcribe-diarize
+```
+
+The generated files are machine transcripts. The diarized model can produce speaker-aware segments, but the labels may still need review before relying on host-specific search filters. After review, refresh the database:
+
+```bash
+python -m rag.cli ingest transcripts/lordofspirits
+```
 
 The text-search backend reads from `TRANSCRIPTS_DIR`, defaulting to:
 
@@ -256,7 +280,27 @@ python -m rag.cli podcast \
   --out out/x-risk-agentic.wav
 ```
 
-This writes both the generated script and a stitched WAV file under `out/`, which is gitignored. The podcast command supports either retrieval backend with `--search-backend rag` or `--search-backend agentic`. It uses generic OpenAI TTS voices configured by `TTS_VOICE_ANDREW` and `TTS_VOICE_STEPHEN`; they are not cloned or imitative host voices.
+By default, podcast synthesis now writes:
+
+- the original generated script, with citations intact;
+- a `.spoken.txt` performance script with transcript citations and other audio-hostile text removed;
+- a mastered WAV with short clip fades, peak normalization, and low room-tone pauses.
+
+Use `--raw-script-audio` to synthesize the exact script text, and `--no-mastering` to disable the WAV mastering pass.
+
+The default OpenAI renderer uses `gpt-4o-mini-tts` with `TTS_VOICE_ANDREW=marin` and `TTS_VOICE_STEPHEN=cedar`, unless overridden. To try ElevenLabs instead:
+
+```bash
+ELEVENLABS_API_KEY=... \
+ELEVENLABS_VOICE_ANDREW=... \
+ELEVENLABS_VOICE_STEPHEN=... \
+python -m rag.cli podcast \
+  --tts-provider elevenlabs \
+  --script-file out/x-risk-agentic.txt \
+  --out out/x-risk-elevenlabs.wav
+```
+
+You can also set `TTS_PROVIDER=elevenlabs` and optionally `ELEVENLABS_TTS_MODEL=eleven_v3` in `.env`. The podcast command supports either retrieval backend with `--search-backend rag` or `--search-backend agentic`.
 
 The repository includes one generated example:
 

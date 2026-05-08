@@ -4,6 +4,7 @@ import argparse
 import sys
 import termios
 import tty
+from dataclasses import replace
 from pathlib import Path
 
 from .chat import answer_once
@@ -50,6 +51,9 @@ def main() -> None:
     podcast.add_argument("--turns", type=int, default=30)
     podcast.add_argument("--turn-words", type=int, default=95)
     podcast.add_argument("--search-backend", choices=["rag", "agentic", "text"], default="agentic")
+    podcast.add_argument("--tts-provider", choices=["openai", "elevenlabs"], help="Override TTS_PROVIDER for this run.")
+    podcast.add_argument("--raw-script-audio", action="store_true", help="Synthesize the script exactly as written.")
+    podcast.add_argument("--no-mastering", action="store_true", help="Disable WAV normalization, fades, and room-tone pauses.")
 
     args = parser.parse_args()
     cfg = settings()
@@ -105,12 +109,23 @@ def main() -> None:
                 turn_words=args.turn_words,
             )
     elif args.command == "podcast":
+        if args.tts_provider:
+            cfg = replace(cfg, tts_provider=args.tts_provider)
+        if args.no_mastering:
+            cfg = replace(cfg, tts_master_audio=False)
         if args.script_file and (args.message or args.message_file or args.script_out):
             raise SystemExit("Use --script-file by itself with --out; do not combine it with --message, --message-file, or --script-out.")
         if args.script_file:
-            result = synthesize_podcast_from_script(args.script_file, cfg, out_path=args.out)
+            result = synthesize_podcast_from_script(
+                args.script_file,
+                cfg,
+                out_path=args.out,
+                performance_script=not args.raw_script_audio,
+            )
             print(f"Wrote {result.out_path}")
             print(f"Read {result.script_path}")
+            if result.performance_script_path:
+                print(f"Wrote {result.performance_script_path}")
             print(f"Synthesized {result.segments} voice segments")
             return
         message = read_message_arg(args)
@@ -124,9 +139,12 @@ def main() -> None:
             turns=args.turns,
             search_backend=args.search_backend,
             turn_words=args.turn_words,
+            performance_script=not args.raw_script_audio,
         )
         print(f"Wrote {result.out_path}")
         print(f"Wrote {result.script_path}")
+        if result.performance_script_path:
+            print(f"Wrote {result.performance_script_path}")
         print(f"Synthesized {result.segments} voice segments")
 
 
