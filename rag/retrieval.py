@@ -56,7 +56,7 @@ def retrieve_rag(
     if not searchable:
         return []
 
-    semantic = [] if settings.embedding_provider == "local" else semantic_search(query, settings, host_filter, limit=20)
+    semantic = semantic_search(query, settings, host_filter, limit=20)
     keyword = bm25_search(query, searchable, limit=20)
     fused = reciprocal_rank_fusion([semantic, keyword])
     candidates = fused[:32]
