@@ -1,0 +1,25 @@
+{
+  "name": "The Lord of Spirits",
+  "hosts": {
+    "fr_andrew_stephen_damick": {
+      "display": "Fr. Andrew Stephen Damick",
+      "aliases": [
+        "fr. andrew stephen damick",
+        "fr andrew stephen damick",
+        "fr. andrew",
+        "fr andrew",
+        "andrew"
+      ]
+    },
+    "fr_stephen_de_young": {
+      "display": "Fr. Stephen De Young",
+      "aliases": [
+        "fr. stephen de young",
+        "fr stephen de young",
+        "fr. stephen",
+        "fr stephen",
+        "stephen"
+      ]
+    }
+  }
+}
